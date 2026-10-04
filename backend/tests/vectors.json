@@ -1,0 +1,57 @@
+{
+  "keys": {
+    "1": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=",
+    "2": "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q="
+  },
+  "cases": [
+    {
+      "name": "valid_token",
+      "token": "AQESNFZ4EjRWeBI0VngSNFZ4taX5lQOOfPeqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO-E8eOWBYuloY6R_6BeUoWbfqkd6XeCjQRNnxHkd5vCCA",
+      "expected_valid": true,
+      "expected_key_id": 1,
+      "expected_ticket_id": "12345678-1234-5678-1234-567812345678"
+    },
+    {
+      "name": "tampered_signature",
+      "token": "AQESNFZ4EjRWeBI0VngSNFZ4taX5lQOOfKKqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO-E8eOWBYuloY6R_6BeUoWbfqkd6XeCjQRNnxHkd5vCCA",
+      "expected_valid": false,
+      "expected_error": "bad_signature"
+    },
+    {
+      "name": "tampered_version",
+      "token": "AgESNFZ4EjRWeBI0VngSNFZ4taX5lQOOfPeqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO-E8eOWBYuloY6R_6BeUoWbfqkd6XeCjQRNnxHkd5vCCA",
+      "expected_valid": false,
+      "expected_error": "bad_version"
+    },
+    {
+      "name": "tampered_ticket_id",
+      "token": "AQESNFZ4EjRWeLg0VngSNFZ4taX5lQOOfPeqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO-E8eOWBYuloY6R_6BeUoWbfqkd6XeCjQRNnxHkd5vCCA",
+      "expected_valid": false,
+      "expected_error": "bad_signature"
+    },
+    {
+      "name": "unknown_key_id",
+      "token": "AWMSNFZ4EjRWeBI0VngSNFZ4GwYkLYDwLvqtyLYmA5Lg-1A_xnDZTBaZLQW-ZSoHaWxqouoE-q5rYpNAhbNX1sMPPKlGGwkFPJ3PtFq5kfS7Ag",
+      "expected_valid": false,
+      "expected_error": "unknown_key"
+    },
+    {
+      "name": "truncated_token",
+      "token": "AQESNFZ4EjRWeBI0VngSNFZ4taX5lQOOfPeqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO8",
+      "expected_valid": false,
+      "expected_error": "malformed"
+    },
+    {
+      "name": "extra_bytes",
+      "token": "AQESNFZ4EjRWeBI0VngSNFZ4taX5lQOOfPeqvMiOzLBLxxTyI8_Q1Cb6yRCOrFauSO-E8eOWBYuloY6R_6BeUoWbfqkd6XeCjQRNnxHkd5vCCGp1bms",
+      "expected_valid": false,
+      "expected_error": "malformed"
+    },
+    {
+      "name": "invalid_base64",
+      "token": "???invalid_b64???",
+      "expected_valid": false,
+      "expected_error": "malformed"
+    }
+  ]
+}
