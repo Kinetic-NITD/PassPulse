@@ -9,6 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config
 from app.db import init_pool, close_pool, health_check, run_migrations
 
+from app.key_cache import refresh_public_keys
+from app.routes.auth_routes import router as auth_router
+from app.routes.scan_routes import router as scan_router
+from app.routes.public_routes import router as public_router
+from app.routes.supervisor_routes import router as supervisor_router
+from app.routes.admin_routes import router as admin_router
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -17,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing database pool (max_size=%d)...", config.DB_POOL_MAX)
-    init_pool(config.DATABASE_URL, max_size=config.DB_POOL_MAX)
+    pool = init_pool(config.DATABASE_URL, max_size=config.DB_POOL_MAX)
     info = health_check()
     logger.info(
         "Connected to PostgreSQL %s (max_connections=%s, role_limit=%s)",
@@ -30,6 +37,12 @@ async def lifespan(app: FastAPI):
         logger.info("Applied %d migration(s): %s", len(applied), applied)
     else:
         logger.info("All migrations up to date.")
+
+    # Refresh public key cache
+    with pool.connection() as conn:
+        keys = refresh_public_keys(conn)
+        logger.info("Loaded %d active signing key(s) into memory cache", len(keys))
+
     yield
     # Shutdown
     close_pool()
@@ -48,8 +61,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(public_router)
+app.include_router(auth_router)
+app.include_router(scan_router)
+app.include_router(supervisor_router)
+app.include_router(admin_router)
+
 
 @app.get("/api/health")
 def api_health():
     info = health_check()
     return {"status": "ok", **info}
+

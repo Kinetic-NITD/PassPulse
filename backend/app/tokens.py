@@ -139,8 +139,10 @@ def verify_token(token: str, public_keys: dict[int, Ed25519PublicKey]) -> Parsed
 
 
 def extract_token_from_url(url: str) -> str:
-    """Extract the token part from a QR URL like .../t/TOKEN."""
-    parts = url.rstrip("/").split("/t/")
-    if len(parts) < 2:
-        raise ValueError("URL does not contain /t/ path")
-    return parts[-1]
+    """Extract the token part from a QR URL like .../t/TOKEN or return bare token."""
+    trimmed = url.strip()
+    if "/t/" in trimmed:
+        sub = trimmed.split("/t/")[-1]
+        return sub.split("/")[0].split("?")[0].split("#")[0]
+    return trimmed
+
