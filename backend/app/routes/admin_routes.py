@@ -321,49 +321,77 @@ def send_emails(
 @router.get("/api/tickets/{ticket_id}/qr.png")
 def get_ticket_qr_png(ticket_id: str):
     """Generate and return PNG QR code for a ticket."""
-    pool = get_pool()
-    with pool.connection() as conn:
-        row = conn.execute(
-            "SELECT id, key_id FROM tickets WHERE id = %s;",
-            (ticket_id,),
-        ).fetchone()
+    try:
+        pool = get_pool()
+        with pool.connection() as conn:
+            row = conn.execute(
+                "SELECT id::text AS id, key_id FROM tickets WHERE id = %s;",
+                (ticket_id,),
+            ).fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        if not row:
+            raise HTTPException(status_code=404, detail="Ticket not found")
 
-    priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
-    token = sign_token(priv_key, row["key_id"], row["id"])
-    url = build_qr_url(config.PUBLIC_BASE_URL, token)
-    png_bytes = generate_qr_png_bytes(url)
+        ticket_uuid = uuid.UUID(str(row["id"]))
+        key_id = int(row["key_id"])
 
-    return Response(content=png_bytes, media_type="image/png")
+        priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
+        token = sign_token(priv_key, key_id, ticket_uuid)
+        url = build_qr_url(config.PUBLIC_BASE_URL, token)
+        png_bytes = generate_qr_png_bytes(url)
+
+        return Response(content=png_bytes, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={"reason": "qr_generation_failed", "message": str(e)},
+        )
 
 
 @router.get("/api/tickets/{ticket_id}/token")
 def get_ticket_token(ticket_id: str):
-    """Return the signed QR token and URL for a ticket as JSON."""
-    pool = get_pool()
-    with pool.connection() as conn:
-        row = conn.execute(
-            "SELECT id, key_id, status FROM tickets WHERE id = %s;",
-            (ticket_id,),
-        ).fetchone()
+    """
+    Return the signed QR token and URL for a ticket as JSON.
+    Used by the admin panel to display / copy the token manually.
+    """
+    try:
+        pool = get_pool()
+        with pool.connection() as conn:
+            row = conn.execute(
+                "SELECT id::text AS id, key_id, status FROM tickets WHERE id = %s;",
+                (ticket_id,),
+            ).fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        if not row:
+            raise HTTPException(status_code=404, detail="Ticket not found")
 
-    priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
-    token = sign_token(priv_key, row["key_id"], row["id"])
-    url = build_qr_url(config.PUBLIC_BASE_URL, token)
+        ticket_uuid = uuid.UUID(str(row["id"]))
+        key_id = int(row["key_id"])
 
-    return {
-        "ticket_id": str(row["id"]),
-        "key_id": row["key_id"],
-        "status": row["status"],
-        "token": token,
-        "url": url,
-    }
+        priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
+        token = sign_token(priv_key, key_id, ticket_uuid)
+        url = build_qr_url(config.PUBLIC_BASE_URL, token)
 
+        return {
+            "ticket_id": str(row["id"]),
+            "key_id": key_id,
+            "status": row["status"],
+            "token": token,
+            "url": url,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={"reason": "token_generation_failed", "message": str(e)},
+        )
 
 @router.post("/api/tickets/{ticket_id}/revoke")
 def revoke_ticket_endpoint(
@@ -558,7 +586,7 @@ def create_participant(
         conn.commit()
 
     priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
-    token = sign_token(priv_key, config.SIGNING_KEY_ID, uuid.UUID(tid))
+    token = sign_token(priv_key, int(config.SIGNING_KEY_ID), uuid.UUID(str(tid)))
     qr_url = build_qr_url(config.PUBLIC_BASE_URL, token)
 
     return {
