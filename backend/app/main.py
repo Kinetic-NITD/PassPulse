@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -51,8 +52,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PassPulse", version="1.0.0", lifespan=lifespan)
 
-# CORS — restrict to frontend origin
-allowed_origins = [config.PUBLIC_BASE_URL]
+# ─── CORS ─────────────────────────────────────────────────────────
+# Comma-separated list of allowed origins from env.
+# Falls back to PUBLIC_BASE_URL + localhost for dev.
+_origins_env = os.environ.get("ALLOWED_ORIGINS", "").strip()
+if _origins_env:
+    allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = [config.PUBLIC_BASE_URL, "http://localhost:3000", "http://127.0.0.1:3000"]
+
+logger.info("CORS allowed origins: %s", allowed_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -72,4 +82,3 @@ app.include_router(admin_router)
 def api_health():
     info = health_check()
     return {"status": "ok", **info}
-

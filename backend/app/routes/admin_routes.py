@@ -4,14 +4,16 @@ import csv
 import io
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
+import psycopg
+
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from app import config
-from app.auth import require_role, StaffUser
+from app.auth import require_role, StaffUser, hash_password
 from app.db import get_pool
 from app.qr import generate_qr_png_bytes
 from app.services import revoke_ticket, reissue_ticket
@@ -320,6 +322,33 @@ def get_ticket_qr_png(ticket_id: str):
 
     return Response(content=png_bytes, media_type="image/png")
 
+@router.get("/api/tickets/{ticket_id}/token")
+def get_ticket_token(ticket_id: str):
+    """
+    Return the signed QR token and URL for a ticket as JSON.
+    Used by the admin panel to display / copy the token manually.
+    """
+    pool = get_pool()
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT id, key_id, status FROM tickets WHERE id = %s;",
+            (ticket_id,),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
+    token = sign_token(priv_key, row["key_id"], row["id"])
+    url = build_qr_url(config.PUBLIC_BASE_URL, token)
+
+    return {
+        "ticket_id": str(row["id"]),
+        "key_id": row["key_id"],
+        "status": row["status"],
+        "token": token,
+        "url": url,
+    }
 
 @router.post("/api/tickets/{ticket_id}/revoke")
 def revoke_ticket_endpoint(
@@ -375,7 +404,7 @@ def reissue_ticket_endpoint(
 
 @router.get("/api/stats")
 def get_event_stats(
-    staff: Annotated[StaffUser, Depends(require_role("volunteer"))],
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
     event_id: str | None = None,
 ):
     pool = get_pool()
@@ -436,3 +465,158 @@ def get_scan_logs(
         ).fetchall()
 
     return {"logs": [dict(r) for r in rows]}
+
+class CreateParticipantRequest(BaseModel):
+    name: str
+    email: str
+    college: str | None = None
+    photo_url: str | None = None
+    event_id: str | None = None
+    send_email: bool = False
+
+
+class CreateStaffRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Literal["volunteer", "supervisor", "admin"] = "volunteer"
+
+
+@router.post("/api/participants/create")
+def create_participant(
+    req: CreateParticipantRequest,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """
+    Create a single participant, auto-issue a ticket, return QR info.
+    Idempotent-safe: duplicate email in same event → 409.
+    """
+    name = req.name.strip()
+    email = req.email.strip().lower()
+    if not name or not email or "@" not in email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "invalid_input", "message": "Valid name and email are required"},
+        )
+
+    pool = get_pool()
+    with pool.connection() as conn:
+        target_event_id = req.event_id or _get_or_create_default_event(conn)
+
+        pid = str(uuid.uuid4())
+        try:
+            conn.execute(
+                """
+                INSERT INTO participants (id, event_id, name, email, college, photo_url)
+                VALUES (%s, %s, %s, %s, %s, %s);
+                """,
+                (pid, target_event_id, name, email, req.college or None, req.photo_url or None),
+            )
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"reason": "duplicate_email",
+                        "message": "A participant with this email already exists for this event"},
+            )
+
+        # Auto-issue ticket
+        tid = str(uuid.uuid4())
+        conn.execute(
+            """
+            INSERT INTO tickets (id, event_id, participant_id, status, key_id)
+            VALUES (%s, %s, %s, 'issued', %s);
+            """,
+            (tid, target_event_id, pid, config.SIGNING_KEY_ID),
+        )
+
+        # Optional: mark email as sent (mock)
+        if req.send_email:
+            conn.execute("UPDATE tickets SET email_sent_at = now() WHERE id = %s;", (tid,))
+
+        conn.commit()
+
+    # Build token + QR URL for immediate display
+    priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
+    token = sign_token(priv_key, config.SIGNING_KEY_ID, uuid.UUID(tid))
+    qr_url = build_qr_url(config.PUBLIC_BASE_URL, token)
+
+    return {
+        "status": "created",
+        "participant": {"id": pid, "name": name, "email": email, "college": req.college or None},
+        "ticket": {"id": tid, "status": "issued"},
+        "token": token,
+        "qr_url": qr_url,
+        "qr_png_url": f"/api/tickets/{tid}/qr.png",
+        "email_sent": req.send_email,
+    }
+
+
+@router.post("/api/users")
+def create_staff(
+    req: CreateStaffRequest,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """Create a single staff member (volunteer/supervisor/admin)."""
+    name = req.name.strip()
+    email = req.email.strip().lower()
+    if not name or not email or "@" not in email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "invalid_input", "message": "Valid name and email are required"},
+        )
+    if len(req.password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "weak_password", "message": "Password must be at least 6 characters"},
+        )
+    if req.role not in ("volunteer", "supervisor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "invalid_role"},
+        )
+
+    sid = str(uuid.uuid4())
+    pool = get_pool()
+    with pool.connection() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO staff (id, name, email, password_hash, role)
+                VALUES (%s, %s, %s, %s, %s);
+                """,
+                (sid, name, email, hash_password(req.password), req.role),
+            )
+            conn.commit()
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"reason": "duplicate_email",
+                        "message": "A staff member with this email already exists"},
+            )
+
+    return {
+        "status": "created",
+        "staff": {"id": sid, "name": name, "email": email, "role": req.role},
+    }
+
+@router.get("/api/users")
+def list_staff(
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """List all staff members (volunteers, supervisors, admins)."""
+    pool = get_pool()
+    with pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, name, email, role, active
+            FROM staff
+            ORDER BY
+                CASE role
+                    WHEN 'admin' THEN 1
+                    WHEN 'supervisor' THEN 2
+                    ELSE 3
+                END,
+                name ASC;
+            """
+        ).fetchall()
+    return {"staff": [dict(r) for r in rows]}
