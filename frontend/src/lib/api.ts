@@ -185,4 +185,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action, reason, id_card_no: idCardNo }),
     }),
+
+  updateStaff: (
+    userId: string,
+    data: { role?: "volunteer" | "supervisor" | "admin"; active?: boolean; name?: string }
+  ) =>
+    request(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteStaff: (userId: string) =>
+    request(`/api/users/${userId}`, { method: "DELETE" }),
 };

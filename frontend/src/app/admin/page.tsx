@@ -76,6 +76,7 @@ const Icon = {
   ChartTab: (p: any) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 3v18h18" /><path d="m7 14 4-4 4 4 6-6" /></svg>,
   ChevronLeft: (p: any) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6" /></svg>,
   ChevronRight: (p: any) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="9 18 15 12 9 6" /></svg>,
+  Edit: (p: any) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>,
 };
 
 // ─── Shared bits ───────────────────────────────────────────────────
@@ -371,7 +372,6 @@ function BulkCsvUploader({
 
   const previewRows = showAll ? rows : rows.slice(0, 5);
 
-  // ── Success state ─────────────────────────────────────────
   if (importResult) {
     return (
       <div>
@@ -404,10 +404,8 @@ function BulkCsvUploader({
     );
   }
 
-  // ── Upload state ──────────────────────────────────────────
   return (
     <div>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: "#EBF4FE", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -426,7 +424,6 @@ function BulkCsvUploader({
         Issue tickets with cryptographically signed QR codes instantly to gate devices.
       </p>
 
-      {/* Tabs row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", gap: 6, padding: 4, backgroundColor: T.bg, borderRadius: 10 }}>
           <span style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, color: T.textSec, display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -442,9 +439,7 @@ function BulkCsvUploader({
         </span>
       </div>
 
-      {/* Main grid: dropzone + summary */}
       <div style={{ display: "grid", gridTemplateColumns: fileName ? "1.4fr 1fr" : "1fr", gap: 16, marginBottom: 18 }}>
-        {/* Dropzone */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -485,7 +480,6 @@ function BulkCsvUploader({
           </div>
         </div>
 
-        {/* Summary card */}
         {fileName && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ border: `1px solid ${T.border}`, borderRadius: 14, padding: 14, backgroundColor: "#fff" }}>
@@ -536,14 +530,12 @@ function BulkCsvUploader({
         )}
       </div>
 
-      {/* Error */}
       {error && (
         <div style={{ padding: "10px 14px", borderRadius: 10, backgroundColor: T.redBg, color: "#C62828", fontSize: 13, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
           <Icon.Alert /> {error}
         </div>
       )}
 
-      {/* Parsed breakdown + grid */}
       {rows.length > 0 && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", backgroundColor: "#FAFAFB", borderRadius: 12, marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
@@ -634,7 +626,6 @@ function BulkCsvUploader({
             )}
           </div>
 
-          {/* Footer */}
           <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -731,6 +722,13 @@ export default function AdminPage() {
     name: "", email: "", password: "",
     role: "volunteer" as "volunteer" | "supervisor" | "admin",
   });
+
+  // Staff edit/delete state
+  const [editingStaff, setEditingStaff] = useState<any | null>(null);
+  const [editRole, setEditRole] = useState<"volunteer" | "supervisor" | "admin">("volunteer");
+  const [editActive, setEditActive] = useState(true);
+  const [deletingStaff, setDeletingStaff] = useState<any | null>(null);
+  const [staffActionBusy, setStaffActionBusy] = useState(false);
 
   const [createdTicket, setCreatedTicket] = useState<any | null>(null);
 
@@ -867,6 +865,40 @@ export default function AdminPage() {
       alert("Create failed: " + (err.detail?.message || err.message));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const openEditStaff = (v: any) => {
+    setEditingStaff(v);
+    setEditRole(v.role);
+    setEditActive(v.active);
+  };
+
+  const handleUpdateStaff = async () => {
+    if (!editingStaff) return;
+    setStaffActionBusy(true);
+    try {
+      await api.updateStaff(editingStaff.id, { role: editRole, active: editActive });
+      setEditingStaff(null);
+      loadVolunteers();
+    } catch (err: any) {
+      alert("Update failed: " + (err.detail?.message || err.message));
+    } finally {
+      setStaffActionBusy(false);
+    }
+  };
+
+  const handleDeleteStaff = async () => {
+    if (!deletingStaff) return;
+    setStaffActionBusy(true);
+    try {
+      await api.deleteStaff(deletingStaff.id);
+      setDeletingStaff(null);
+      loadVolunteers();
+    } catch (err: any) {
+      alert("Delete failed: " + (err.detail?.message || err.message));
+    } finally {
+      setStaffActionBusy(false);
     }
   };
 
@@ -1242,8 +1274,8 @@ export default function AdminPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#FAFAFB" }}>
-                      {["STAFF MEMBER", "EMAIL", "ROLE", "STATUS"].map((h) => (
-                        <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                      {["STAFF MEMBER", "EMAIL", "ROLE", "STATUS", "ACTIONS"].map((h, i) => (
+                        <th key={h} style={{ padding: "12px 16px", textAlign: i === 4 ? "right" : "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1255,7 +1287,14 @@ export default function AdminPage() {
                             <div style={{ width: 38, height: 38, borderRadius: "50%", backgroundColor: avatarColor(v.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
                               {initials(v.name)}
                             </div>
-                            <div style={{ fontSize: 14, fontWeight: 600 }}>{v.name}</div>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                                {v.name}
+                                {v.id === staff?.id && (
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, backgroundColor: "#EBF4FE", color: "#0055B8" }}>YOU</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td style={{ padding: "14px 16px" }}>
@@ -1268,11 +1307,27 @@ export default function AdminPage() {
                             {v.active ? "Active" : "Inactive"}
                           </span>
                         </td>
+                        <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                          <div style={{ display: "inline-flex", gap: 6 }}>
+                            <ActionIconButton
+                              title="Change role / status"
+                              tone="blue"
+                              onClick={() => openEditStaff(v)}
+                              icon={<Icon.Edit style={{ width: 14, height: 14 }} />}
+                            />
+                            <ActionIconButton
+                              title={v.id === staff?.id ? "Can't delete yourself" : "Delete staff"}
+                              tone="red"
+                              onClick={() => v.id === staff?.id ? alert("You can't delete your own account.") : setDeletingStaff(v)}
+                              icon={<Icon.X style={{ width: 14, height: 14 }} />}
+                            />
+                          </div>
+                        </td>
                       </tr>
                     ))}
                     {volunteers.length === 0 && (
                       <tr>
-                        <td colSpan={4} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
+                        <td colSpan={5} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
                           No staff members found.
                         </td>
                       </tr>
@@ -1474,6 +1529,75 @@ export default function AdminPage() {
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* EDIT STAFF (change role / status) */}
+      {editingStaff && (
+        <Modal onClose={() => setEditingStaff(null)}>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Edit Staff Member</h3>
+          <p style={{ fontSize: 13, color: T.textSec, marginBottom: 16 }}>
+            {editingStaff.name} • {editingStaff.email}
+          </p>
+
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textSec, letterSpacing: 0.5, marginBottom: 6 }}>ROLE</label>
+          <select
+            value={editRole}
+            onChange={(e) => setEditRole(e.target.value as any)}
+            style={inputStyle}
+          >
+            <option value="volunteer">Volunteer</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Admin</option>
+          </select>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", backgroundColor: T.bg, borderRadius: 10, marginBottom: 16, cursor: "pointer" }}>
+            <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} style={{ width: 18, height: 18 }} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Active</div>
+              <div style={{ fontSize: 11, color: T.textSec }}>Inactive staff can't log in</div>
+            </div>
+          </label>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={handleUpdateStaff}
+              disabled={staffActionBusy}
+              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}
+            >
+              {staffActionBusy ? "Saving…" : "Save Changes"}
+            </button>
+            <button onClick={() => setEditingStaff(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* DELETE STAFF CONFIRMATION */}
+      {deletingStaff && (
+        <Modal onClose={() => setDeletingStaff(null)} width={440}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", backgroundColor: T.redBg, color: T.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }}>
+            <Icon.Alert />
+          </div>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Delete {deletingStaff.name}?</h3>
+          <p style={{ fontSize: 13, color: T.textSec, marginBottom: 20 }}>
+            This removes <strong>{deletingStaff.email}</strong> permanently.
+            Their scan history will be preserved but anonymized.
+          </p>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={handleDeleteStaff}
+              disabled={staffActionBusy}
+              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}
+            >
+              {staffActionBusy ? "Deleting…" : "Yes, Delete"}
+            </button>
+            <button onClick={() => setDeletingStaff(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
+              Cancel
+            </button>
+          </div>
         </Modal>
       )}
 
