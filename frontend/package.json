@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@noble/ed25519": "^2.2.3",
+    "jsqr": "^1.4.0",
     "next": "^14.2.14",
-    "qr-scanner": "^1.4.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

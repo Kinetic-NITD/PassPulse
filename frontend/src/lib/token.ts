@@ -76,15 +76,41 @@ export function bytesToUuid(bytes: Uint8Array): string {
 /**
  * Extract token from full QR text URL or return token if already bare
  */
+/**
+ * Extract the token from various input shapes:
+ *   - full URL:  http://host/t/<TOKEN>
+ *   - bare token: <TOKEN>
+ *   - quoted or whitespace-padded
+ *   - a UUID (returns "" so caller can give a clear error)
+ */
 export function extractToken(qrText: string): string {
-  const trimmed = qrText.trim();
+  let s = (qrText || "").trim();
+
+  // Strip surrounding quotes / backticks / whitespace
+  s = s.replace(/^["'`\s]+|["'`\s]+$/g, "");
+
+  // If it's a URL like .../t/<TOKEN>, cut down to the token part
   const marker = "/t/";
-  const idx = trimmed.indexOf(marker);
+  const idx = s.indexOf(marker);
   if (idx !== -1) {
-    const sub = trimmed.slice(idx + marker.length);
-    return sub.split(/[\/?#]/)[0];
+    s = s.slice(idx + marker.length);
+    s = s.split(/[\/?#\s]/)[0];
   }
-  return trimmed;
+
+  // Final safety net: keep ONLY base64url alphabet characters
+  s = s.replace(/[^A-Za-z0-9_-]/g, "");
+
+  return s;
+}
+
+/**
+ * True if the string looks like a UUID (8-4-4-4-12 hex).
+ * Used to give a helpful error when someone pastes the ticket ID.
+ */
+export function looksLikeUuid(s: string): boolean {
+  return /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/.test(
+    s.trim()
+  );
 }
 
 /**

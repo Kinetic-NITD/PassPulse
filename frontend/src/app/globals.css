@@ -1,0 +1,177 @@
+@charset "utf-8";
+
+:root {
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", Helvetica, Arial, sans-serif;
+  --bg-color: #F5F7FA;
+  --bg-card: #FFFFFF;
+  --text-main: #1C1C1E;
+  --text-muted: #8E8E93;
+  --text-sub: #636366;
+  --apple-blue: #007AFF;
+  --apple-blue-hover: #0062CC;
+  --apple-green: #34C759;
+  --apple-green-bg: #E8F9EE;
+  --apple-red: #FF3B30;
+  --apple-red-bg: #FEECEB;
+  --apple-orange: #FF9500;
+  --apple-orange-bg: #FFF4E5;
+  --border-light: rgba(0, 0, 0, 0.08);
+  --border-card: rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --radius-card: 18px;
+  --radius-button: 12px;
+  --radius-pill: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+input, button, select, textarea {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-weight: 500;
+  transition: all 0.15s ease-in-out;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background-color: var(--apple-blue);
+  color: #FFFFFF;
+  padding: 14px 24px;
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.btn-primary:hover {
+  background-color: var(--apple-blue-hover);
+}
+
+.btn-success {
+  background-color: #107C41;
+  color: #FFFFFF;
+  padding: 16px 24px;
+  border-radius: var(--radius-button);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-secondary {
+  background-color: #E5E5EA;
+  color: var(--text-main);
+  padding: 14px 24px;
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-danger {
+  background-color: var(--apple-red);
+  color: #FFFFFF;
+  padding: 14px 24px;
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-green {
+  background-color: var(--apple-green-bg);
+  color: #1B7A37;
+}
+
+.badge-red {
+  background-color: var(--apple-red-bg);
+  color: #C62828;
+}
+
+.badge-blue {
+  background-color: #EBF4FE;
+  color: #007AFF;
+}
+
+.badge-orange {
+  background-color: var(--apple-orange-bg);
+  color: #B25E00;
+}
+
+/* Modal styling */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: #FFFFFF;
+  border-radius: 24px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+  padding: 28px;
+}
