@@ -13,9 +13,8 @@ export const metadata: Metadata = {
     title: "PassPulse",
   },
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
-  },
+    icon: ["icons/icon-192.png", "icons/icon-512.png"]
+  }
 };
 
 export const viewport: Viewport = {
@@ -33,6 +32,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="PassPulse" />
+      </head>
       <body>
         {children}
         <ServiceWorkerRegistrar />
