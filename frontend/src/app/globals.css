@@ -41,7 +41,10 @@ body {
   min-height: 100vh;
 }
 
-input, button, select, textarea {
+input,
+button,
+select,
+textarea {
   font-family: inherit;
 }
 
@@ -172,6 +175,12 @@ button:active {
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
   padding: 28px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

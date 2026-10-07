@@ -487,10 +487,6 @@ def create_participant(
     req: CreateParticipantRequest,
     staff: Annotated[StaffUser, Depends(require_role("admin"))],
 ):
-    """
-    Create a single participant, auto-issue a ticket, return QR info.
-    Idempotent-safe: duplicate email in same event → 409.
-    """
     name = req.name.strip()
     email = req.email.strip().lower()
     if not name or not email or "@" not in email:
@@ -519,14 +515,42 @@ def create_participant(
                         "message": "A participant with this email already exists for this event"},
             )
 
+        # Verify signing key exists before inserting the ticket
+        key_row = conn.execute(
+            "SELECT key_id FROM signing_keys WHERE key_id = %s AND active = true;",
+            (config.SIGNING_KEY_ID,),
+        ).fetchone()
+        if not key_row:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "reason": "missing_signing_key",
+                    "message": f"Signing key {config.SIGNING_KEY_ID} is not registered in the DB. "
+                               "Wait for a cold start or run the key registration script.",
+                },
+            )
+
         tid = str(uuid.uuid4())
-        conn.execute(
-            """
-            INSERT INTO tickets (id, event_id, participant_id, status, key_id)
-            VALUES (%s, %s, %s, 'issued', %s);
-            """,
-            (tid, target_event_id, pid, config.SIGNING_KEY_ID),
-        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO tickets (id, event_id, participant_id, status, key_id)
+                VALUES (%s, %s, %s, 'issued', %s);
+                """,
+                (tid, target_event_id, pid, config.SIGNING_KEY_ID),
+            )
+        except psycopg.errors.UniqueViolation as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"reason": "ticket_conflict",
+                        "message": f"Ticket conflict: {e}"},
+            )
+        except psycopg.errors.ForeignKeyViolation as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"reason": "foreign_key_violation",
+                        "message": f"Foreign key violation: {e}"},
+            )
 
         if req.send_email:
             conn.execute("UPDATE tickets SET email_sent_at = now() WHERE id = %s;", (tid,))
@@ -546,7 +570,6 @@ def create_participant(
         "qr_png_url": f"/api/tickets/{tid}/qr.png",
         "email_sent": req.send_email,
     }
-
 
 @router.post("/api/users")
 def create_staff(

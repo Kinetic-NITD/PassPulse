@@ -1,6 +1,9 @@
 /**
  * API client for PassPulse backend.
+ * Includes automatic retry for GET requests and client-side caching.
  */
+
+import { getCache, setCache, invalidateCache } from "./cache";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -42,42 +45,88 @@ export function setStaff(staff: any): void {
   }
 }
 
+export function clearApiCache(): void {
+  invalidateCache();
+}
+
 async function request(path: string, options: RequestInit = {}) {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-  };
+  const method = (options.method || "GET").toUpperCase();
+  const isRetryable = method === "GET";
+  const maxAttempts = isRetryable ? 3 : 1;
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  let lastErr: any = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const token = getToken();
+      const headers: Record<string, string> = {
+        ...(options.headers as Record<string, string>),
+      };
+
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+      if (
+        isRetryable &&
+        attempt < maxAttempts &&
+        (res.status === 502 || res.status === 503 || res.status === 504)
+      ) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      let data: any = null;
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else if (contentType.includes("text/csv")) {
+        data = await res.text();
+      } else {
+        data = await res.text();
+      }
+
+      if (!res.ok) {
+        const error: any = new Error(
+          data?.detail?.message || data?.detail || `HTTP ${res.status}`
+        );
+        error.status = res.status;
+        error.detail = data?.detail;
+        throw error;
+      }
+
+      return data;
+    } catch (err: any) {
+      lastErr = err;
+      const isNetworkError = !err?.status;
+      if (isRetryable && isNetworkError && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+      throw err;
+    }
   }
 
-  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
+  throw lastErr;
+}
+
+async function cachedGet<T>(
+  key: string,
+  path: string,
+  forceRefresh = false
+): Promise<T> {
+  if (!forceRefresh) {
+    const hit = getCache<T>(key);
+    if (hit !== null) return hit;
   }
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
-
-  const contentType = res.headers.get("content-type") || "";
-  let data: any = null;
-  if (contentType.includes("application/json")) {
-    data = await res.json();
-  } else if (contentType.includes("text/csv")) {
-    data = await res.text();
-  } else {
-    data = await res.text();
-  }
-
-  if (!res.ok) {
-    const error: any = new Error(data?.detail?.message || data?.detail || `HTTP ${res.status}`);
-    error.status = res.status;
-    error.detail = data?.detail;
-    throw error;
-  }
-
+  const data = await request(path, { method: "GET" });
+  setCache(key, data);
   return data;
 }
 
@@ -110,91 +159,128 @@ export const api = {
     }),
 
   searchParticipants: (q: string) =>
-    request(`/api/participants/search?q=${encodeURIComponent(q)}`, { method: "GET" }),
+    request(`/api/participants/search?q=${encodeURIComponent(q)}`, {
+      method: "GET",
+    }),
 
-  listParticipants: (q: string = "", limit: number = 50, offset: number = 0) =>
-    request(`/api/participants?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`, { method: "GET" }),
+  listParticipants: (q: string = "", limit: number = 50, offset: number = 0, force = false) =>
+    cachedGet<any>(
+      `participants_${q}_${limit}_${offset}`,
+      `/api/participants?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`,
+      force
+    ),
 
-  getStats: () =>
-    request("/api/stats", { method: "GET" }),
+  getStats: (force = false) =>
+    cachedGet<any>("stats", "/api/stats", force),
+
+  getStaffList: (force = false) =>
+    cachedGet<any>("staff", "/api/users", force),
+
+  getScanLog: (limit: number = 50, offset: number = 0, force = false) =>
+    cachedGet<any>(
+      `scanlog_${limit}_${offset}`,
+      `/api/scan-log?limit=${limit}&offset=${offset}`,
+      force
+    ),
 
   getTicketToken: (ticketId: string) =>
     request(`/api/tickets/${ticketId}/token`, { method: "GET" }),
 
-  getScanLog: (limit: number = 50, offset: number = 0) =>
-    request(`/api/scan-log?limit=${limit}&offset=${offset}`, { method: "GET" }),
-
-  getStaffList: () =>
-    request("/api/users", { method: "GET" }),
-
-  importParticipants: (csvContent: string) =>
-    request("/api/participants/import", {
+  importParticipants: async (csvContent: string) => {
+    const res = await request("/api/participants/import", {
       method: "POST",
       body: JSON.stringify({ csv_content: csvContent }),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
-  createParticipant: (data: {
+  createParticipant: async (data: {
     name: string;
     email: string;
     college?: string;
     photo_url?: string;
     send_email?: boolean;
-  }) =>
-    request("/api/participants/create", {
+  }) => {
+    const res = await request("/api/participants/create", {
       method: "POST",
       body: JSON.stringify(data),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
-  createStaff: (data: {
+  createStaff: async (data: {
     name: string;
     email: string;
     password: string;
     role: "volunteer" | "supervisor" | "admin";
-  }) =>
-    request("/api/users", {
+  }) => {
+    const res = await request("/api/users", {
       method: "POST",
       body: JSON.stringify(data),
-    }),
+    });
+    invalidateCache("staff");
+    return res;
+  },
 
-  issueTickets: () =>
-    request("/api/tickets/issue", {
+  updateStaff: async (
+    userId: string,
+    data: { role?: "volunteer" | "supervisor" | "admin"; active?: boolean; name?: string }
+  ) => {
+    const res = await request(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    invalidateCache("staff");
+    return res;
+  },
+
+  deleteStaff: async (userId: string) => {
+    const res = await request(`/api/users/${userId}`, { method: "DELETE" });
+    invalidateCache("staff");
+    return res;
+  },
+
+  issueTickets: async () => {
+    const res = await request("/api/tickets/issue", {
       method: "POST",
       body: JSON.stringify({}),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
-  sendEmails: (forceResend: boolean = false) =>
-    request("/api/emails/send", {
+  sendEmails: async (forceResend: boolean = false) => {
+    const res = await request("/api/emails/send", {
       method: "POST",
       body: JSON.stringify({ force_resend: forceResend }),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
-  revokeTicket: (ticketId: string, reason: string) =>
-    request(`/api/tickets/${ticketId}/revoke`, {
+  revokeTicket: async (ticketId: string, reason: string) => {
+    const res = await request(`/api/tickets/${ticketId}/revoke`, {
       method: "POST",
       body: JSON.stringify({ reason }),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
-  reissueTicket: (ticketId: string, reason: string) =>
-    request(`/api/tickets/${ticketId}/reissue`, {
+  reissueTicket: async (ticketId: string, reason: string) => {
+    const res = await request(`/api/tickets/${ticketId}/reissue`, {
       method: "POST",
       body: JSON.stringify({ reason }),
-    }),
+    });
+    invalidateCache();
+    return res;
+  },
 
   overrideTicket: (ticketId: string, action: string, reason: string, idCardNo?: string) =>
     request(`/api/tickets/${ticketId}/override`, {
       method: "POST",
       body: JSON.stringify({ action, reason, id_card_no: idCardNo }),
     }),
-
-  updateStaff: (
-    userId: string,
-    data: { role?: "volunteer" | "supervisor" | "admin"; active?: boolean; name?: string }
-  ) =>
-    request(`/api/users/${userId}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-
-  deleteStaff: (userId: string) =>
-    request(`/api/users/${userId}`, { method: "DELETE" }),
 };

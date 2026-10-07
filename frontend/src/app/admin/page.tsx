@@ -50,7 +50,6 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-// ─── Icons ─────────────────────────────────────────────────────────
 const Icon = {
   Bell: (p: any) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>,
   Search: (p: any) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>,
@@ -79,7 +78,6 @@ const Icon = {
   Edit: (p: any) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>,
 };
 
-// ─── Shared bits ───────────────────────────────────────────────────
 function StatusPill({ status }: { status: string | null }) {
   if (!status) return <span style={{ fontSize: 12, color: T.textTer, fontWeight: 500 }}>No pass</span>;
   const s: Record<string, { bg: string; fg: string; label: string }> = {
@@ -170,7 +168,6 @@ const inputStyle: React.CSSProperties = {
   marginBottom: 14, fontFamily: "inherit", backgroundColor: "#fff", color: "#1D1D1F",
 };
 
-// ─── CSV parser ────────────────────────────────────────────────────
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let cur: string[] = [];
@@ -247,16 +244,7 @@ function analyzeCsv(text: string): ParsedRow[] {
   return out;
 }
 
-// ─── Bulk CSV uploader ─────────────────────────────────────────────
-function BulkCsvUploader({
-  onImported,
-  onCancel,
-  onClose,
-}: {
-  onImported: () => void;
-  onCancel: () => void;
-  onClose: () => void;
-}) {
+function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => void; onCancel: () => void; onClose: () => void }) {
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState(0);
   const [csvText, setCsvText] = useState("");
@@ -274,13 +262,8 @@ function BulkCsvUploader({
   const errorCount = rows.filter((r) => r.status === "field_error").length;
 
   const reset = () => {
-    setFileName("");
-    setFileSize(0);
-    setCsvText("");
-    setRows([]);
-    setError(null);
-    setImportResult(null);
-    setShowAll(false);
+    setFileName(""); setFileSize(0); setCsvText(""); setRows([]);
+    setError(null); setImportResult(null); setShowAll(false);
   };
 
   const handleFile = async (file: File) => {
@@ -300,19 +283,15 @@ function BulkCsvUploader({
     }
     try {
       const text = await file.text();
-      setFileName(file.name);
-      setFileSize(file.size);
-      setCsvText(text);
-      setRows(analyzeCsv(text));
-      setImportResult(null);
+      setFileName(file.name); setFileSize(file.size);
+      setCsvText(text); setRows(analyzeCsv(text)); setImportResult(null);
     } catch {
       setError("Could not read file.");
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
+    e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files?.[0];
     if (f) handleFile(f);
   };
@@ -394,10 +373,7 @@ function BulkCsvUploader({
             <div style={{ fontSize: 28, fontWeight: 800, color: "#C62828" }}>{importResult.errors}</div>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          style={{ marginTop: 24, width: "100%", padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}
-        >
+        <button onClick={onClose} style={{ marginTop: 24, width: "100%", padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>
           Done
         </button>
       </div>
@@ -447,21 +423,13 @@ function BulkCsvUploader({
           onClick={() => fileInputRef.current?.click()}
           style={{
             border: `2px dashed ${dragging ? T.blue : "rgba(0,0,0,0.15)"}`,
-            borderRadius: 16,
-            padding: "36px 20px",
-            textAlign: "center",
+            borderRadius: 16, padding: "36px 20px", textAlign: "center",
             backgroundColor: dragging ? "#EBF4FE" : "#FAFAFB",
-            cursor: "pointer",
-            transition: "all 0.15s",
+            cursor: "pointer", transition: "all 0.15s",
           }}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            style={{ display: "none" }}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
-          />
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
           <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 68, height: 68, borderRadius: 16, backgroundColor: "#fff", border: `1px solid ${T.border}`, marginBottom: 14 }}>
             <Icon.UploadCloud style={{ color: T.blue }} />
           </div>
@@ -508,17 +476,7 @@ function BulkCsvUploader({
               <div style={{ fontSize: 10, fontWeight: 700, color: T.textTer, letterSpacing: 0.7, marginBottom: 10 }}>
                 SPECIFICATION BOILERPLATE
               </div>
-              <button
-                onClick={downloadTemplate}
-                style={{
-                  width: "100%", padding: "10px 12px", borderRadius: 10,
-                  border: `1px solid ${T.border}`, backgroundColor: "#fff",
-                  cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  fontFamily: FONT, color: T.text,
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  marginBottom: 10,
-                }}
-              >
+              <button onClick={downloadTemplate} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 10 }}>
                 <Icon.DownloadCloud /> Download CSV Template (.csv)
                 <span style={{ color: T.textTer, fontWeight: 500 }}>1.4 KB</span>
               </button>
@@ -553,9 +511,6 @@ function BulkCsvUploader({
                 <Icon.Alert /> {errorCount} Field Errors
               </span>
             </div>
-            <span style={{ fontSize: 13, color: T.blue, fontWeight: 600, cursor: "pointer" }}>
-              View Error Audit Log →
-            </span>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -581,9 +536,7 @@ function BulkCsvUploader({
                     const isError = row.status !== "valid";
                     return (
                       <tr key={row.rowNum} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-                        <td style={{ padding: "12px 14px", fontSize: 11, color: T.textTer, fontFamily: "ui-monospace, monospace" }}>
-                          {String(row.rowNum).padStart(3, "0")}
-                        </td>
+                        <td style={{ padding: "12px 14px", fontSize: 11, color: T.textTer, fontFamily: "ui-monospace, monospace" }}>{String(row.rowNum).padStart(3, "0")}</td>
                         <td style={{ padding: "12px 14px", fontWeight: 600, color: isError ? "#C62828" : T.text }}>
                           {row.name || <span style={{ color: T.red, fontStyle: "italic" }}>[Empty Name]</span>}
                         </td>
@@ -594,9 +547,7 @@ function BulkCsvUploader({
                           {row.college || "[Empty College]"}
                         </td>
                         <td style={{ padding: "12px 14px", fontSize: 12 }}>
-                          <span style={{ padding: "3px 10px", borderRadius: 20, backgroundColor: T.bg, fontWeight: 600 }}>
-                            {row.tier}
-                          </span>
+                          <span style={{ padding: "3px 10px", borderRadius: 20, backgroundColor: T.bg, fontWeight: 600 }}>{row.tier}</span>
                         </td>
                         <td style={{ padding: "12px 14px" }}>{statusPill(row)}</td>
                       </tr>
@@ -610,18 +561,9 @@ function BulkCsvUploader({
                 <span style={{ color: T.textSec }}>
                   Showing {showAll ? rows.length : "initial 5"} test sample records out of {rows.length}
                 </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <span style={{ color: T.blue, fontWeight: 600, cursor: "pointer" }}>
-                    Download Unresolved ({duplicateCount + errorCount})
-                  </span>
-                  <span style={{ color: T.textTer }}>•</span>
-                  <button
-                    onClick={() => setShowAll((s) => !s)}
-                    style={{ border: "none", background: "none", cursor: "pointer", color: T.blue, fontWeight: 600, fontSize: 12, fontFamily: FONT, padding: 0 }}
-                  >
-                    {showAll ? "Collapse Grid" : "Full Grid Expansion"}
-                  </button>
-                </div>
+                <button onClick={() => setShowAll((s) => !s)} style={{ border: "none", background: "none", cursor: "pointer", color: T.blue, fontWeight: 600, fontSize: 12, fontFamily: FONT, padding: 0 }}>
+                  {showAll ? "Collapse Grid" : "Full Grid Expansion"}
+                </button>
               </div>
             )}
           </div>
@@ -636,37 +578,16 @@ function BulkCsvUploader({
               </label>
               {duplicateCount + errorCount > 0 && (
                 <span style={{ fontSize: 13, color: "#C62828", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <Icon.Alert /> {duplicateCount + errorCount} rows with errors will be skipped and exported to fix-list.csv
+                  <Icon.Alert /> {duplicateCount + errorCount} rows with errors will be skipped
                 </span>
               )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button
-                onClick={reset}
-                style={{
-                  padding: "12px 24px", borderRadius: 12,
-                  border: `1px solid ${T.border}`, backgroundColor: "#fff",
-                  cursor: "pointer", fontSize: 14, fontWeight: 600,
-                  fontFamily: FONT, color: T.text,
-                  display: "flex", alignItems: "center", gap: 8,
-                }}
-              >
+              <button onClick={reset} style={{ padding: "12px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8 }}>
                 Cancel / Re-upload
               </button>
-              <button
-                onClick={handleConfirm}
-                disabled={importing || validCount === 0}
-                style={{
-                  padding: "12px 26px", borderRadius: 12,
-                  border: "none", backgroundColor: T.blue, color: "#fff",
-                  cursor: importing || validCount === 0 ? "not-allowed" : "pointer",
-                  fontSize: 14, fontWeight: 700, fontFamily: FONT,
-                  display: "flex", alignItems: "center", gap: 8,
-                  opacity: importing || validCount === 0 ? 0.5 : 1,
-                  boxShadow: "0 4px 12px rgba(0,122,255,0.25)",
-                }}
-              >
+              <button onClick={handleConfirm} disabled={importing || validCount === 0} style={{ padding: "12px 26px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: importing || validCount === 0 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, opacity: importing || validCount === 0 ? 0.5 : 1, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}>
                 {importing ? "Importing…" : "Confirm & Import Participants"}
               </button>
             </div>
@@ -676,10 +597,7 @@ function BulkCsvUploader({
 
       {rows.length === 0 && (
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
-          <button
-            onClick={onCancel}
-            style={{ padding: "12px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, color: T.text }}
-          >
+          <button onClick={onCancel} style={{ padding: "12px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, color: T.text }}>
             Cancel
           </button>
         </div>
@@ -688,7 +606,6 @@ function BulkCsvUploader({
   );
 }
 
-// ─── MAIN PAGE ─────────────────────────────────────────────────────
 export default function AdminPage() {
   const router = useRouter();
   const [staff, setStaff] = useState<any>(null);
@@ -707,9 +624,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
 
   const [volunteers, setVolunteers] = useState<any[]>([]);
+  const [volunteersLoading, setVolunteersLoading] = useState(false);
+  const [volunteersError, setVolunteersError] = useState<string | null>(null);
   const [scanLogs, setScanLogs] = useState<any[]>([]);
 
-  // Modals
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [addTab, setAddTab] = useState<"individual" | "bulk">("individual");
   const [creating, setCreating] = useState(false);
@@ -723,7 +641,6 @@ export default function AdminPage() {
     role: "volunteer" as "volunteer" | "supervisor" | "admin",
   });
 
-  // Staff edit/delete state
   const [editingStaff, setEditingStaff] = useState<any | null>(null);
   const [editRole, setEditRole] = useState<"volunteer" | "supervisor" | "admin">("volunteer");
   const [editActive, setEditActive] = useState(true);
@@ -736,7 +653,6 @@ export default function AdminPage() {
   const [actionType, setActionType] = useState<"revoke" | "reissue" | null>(null);
   const [actionReason, setActionReason] = useState("");
 
-  // Responsive
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 820);
     check();
@@ -744,7 +660,6 @@ export default function AdminPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Auth
   useEffect(() => {
     const currentStaff = getStaff();
     if (!currentStaff) { router.replace("/login"); return; }
@@ -752,29 +667,36 @@ export default function AdminPage() {
     setStaff(currentStaff);
   }, [router]);
 
-  const loadStats = useCallback(async () => {
-    try { setStats(await api.getStats()); } catch (e) { console.error(e); }
+  const loadStats = useCallback(async (force = false) => {
+    try { setStats(await api.getStats(force)); } catch (e) { console.error(e); }
   }, []);
 
-  const loadParticipants = useCallback(async () => {
+  const loadParticipants = useCallback(async (force = false) => {
     try {
       const offset = participantPage * PAGE_SIZE;
-      const data = await api.listParticipants(searchQuery, PAGE_SIZE, offset);
+      const data = await api.listParticipants(searchQuery, PAGE_SIZE, offset, force);
       setParticipants(data.participants || []);
       setParticipantTotal(data.total || 0);
     } catch (e) { console.error(e); }
   }, [searchQuery, participantPage]);
 
-  const loadVolunteers = useCallback(async () => {
+  const loadVolunteers = useCallback(async (force = false) => {
+    setVolunteersLoading(true);
+    setVolunteersError(null);
     try {
-      const data = await api.getStaffList();
+      const data = await api.getStaffList(force);
       setVolunteers(data.staff || []);
-    } catch (e) { console.error(e); }
+    } catch (e: any) {
+      console.error("loadVolunteers failed:", e);
+      setVolunteersError(e?.detail?.message || e?.message || "Failed to load staff");
+    } finally {
+      setVolunteersLoading(false);
+    }
   }, []);
 
-  const loadAnalytics = useCallback(async () => {
+  const loadAnalytics = useCallback(async (force = false) => {
     try {
-      const data = await api.getScanLog(30, 0);
+      const data = await api.getScanLog(30, 0, force);
       setScanLogs(data.logs || []);
     } catch (e) { console.error(e); }
   }, []);
@@ -782,25 +704,35 @@ export default function AdminPage() {
   useEffect(() => {
     if (!staff) return;
     loadStats();
-    if (activeTab === "participants") loadParticipants();
-    else if (activeTab === "volunteers") loadVolunteers();
-    else if (activeTab === "analytics") loadAnalytics();
-  }, [staff, activeTab, loadStats, loadParticipants, loadVolunteers, loadAnalytics]);
+  }, [staff, loadStats]);
 
-  const refresh = () => {
-    loadStats();
-    if (activeTab === "participants") loadParticipants();
-    else if (activeTab === "volunteers") loadVolunteers();
-    else if (activeTab === "analytics") loadAnalytics();
+  useEffect(() => {
+    if (!staff || activeTab !== "participants") return;
+    loadParticipants();
+  }, [staff, activeTab, participantPage, searchQuery, loadParticipants]);
+
+  useEffect(() => {
+    if (!staff || activeTab !== "volunteers") return;
+    loadVolunteers();
+  }, [staff, activeTab, loadVolunteers]);
+
+  useEffect(() => {
+    if (!staff || activeTab !== "analytics") return;
+    loadAnalytics();
+  }, [staff, activeTab, loadAnalytics]);
+
+  const refresh = (force = false) => {
+    loadStats(force);
+    if (activeTab === "participants") loadParticipants(force);
+    else if (activeTab === "volunteers") loadVolunteers(force);
+    else if (activeTab === "analytics") loadAnalytics(force);
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setParticipantPage(0);
-    loadParticipants();
   };
 
-  // Actions
   const handleExportCsv = async () => {
     try {
       const token = getToken();
@@ -837,8 +769,8 @@ export default function AdminPage() {
       setCreatedTicket({ ...res, qr_png_url: res.qr_png_url || `/api/tickets/${res.ticket.id}/qr.png` });
       setShowAddParticipant(false);
       setNewParticipant({ name: "", email: "", college: "", photo_url: "", send_email: false });
-      loadStats();
-      loadParticipants();
+      loadStats(true);
+      loadParticipants(true);
     } catch (err: any) {
       alert("Create failed: " + (err.detail?.message || err.message));
     } finally {
@@ -860,7 +792,7 @@ export default function AdminPage() {
       alert(`Created ${newStaff.role}: ${newStaff.name}`);
       setShowAddStaff(false);
       setNewStaff({ name: "", email: "", password: "", role: "volunteer" });
-      if (activeTab === "volunteers") loadVolunteers();
+      loadVolunteers(true);
     } catch (err: any) {
       alert("Create failed: " + (err.detail?.message || err.message));
     } finally {
@@ -880,7 +812,7 @@ export default function AdminPage() {
     try {
       await api.updateStaff(editingStaff.id, { role: editRole, active: editActive });
       setEditingStaff(null);
-      loadVolunteers();
+      loadVolunteers(true);
     } catch (err: any) {
       alert("Update failed: " + (err.detail?.message || err.message));
     } finally {
@@ -894,7 +826,7 @@ export default function AdminPage() {
     try {
       await api.deleteStaff(deletingStaff.id);
       setDeletingStaff(null);
-      loadVolunteers();
+      loadVolunteers(true);
     } catch (err: any) {
       alert("Delete failed: " + (err.detail?.message || err.message));
     } finally {
@@ -924,7 +856,7 @@ export default function AdminPage() {
       if (actionType === "revoke") await api.revokeTicket(actionTicketId, actionReason.trim());
       else await api.reissueTicket(actionTicketId, actionReason.trim());
       setActionTicketId(null); setActionType(null); setActionReason("");
-      loadStats(); loadParticipants();
+      loadStats(true); loadParticipants(true);
     } catch (err: any) {
       alert(`Action failed: ${err.message}`);
     }
@@ -957,7 +889,6 @@ export default function AdminPage() {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: T.bg, fontFamily: FONT, color: T.text, paddingBottom: isMobile ? 80 : 0 }}>
-      {/* Top nav */}
       <div style={{
         backgroundColor: "#fff", borderBottom: `1px solid ${T.border}`,
         padding: isMobile ? "12px 16px" : "10px 24px",
@@ -1022,7 +953,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Desktop tabs */}
       {!isMobile && (
         <div style={{ backgroundColor: "#fff", borderBottom: `1px solid ${T.border}`, padding: "0 24px", display: "flex", gap: 4 }}>
           {TABS.map((tab) => {
@@ -1048,7 +978,6 @@ export default function AdminPage() {
 
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: isMobile ? "16px" : "24px" }}>
 
-        {/* ═══ PARTICIPANTS TAB ═══ */}
         {activeTab === "participants" && (
           <>
             {!isMobile && (
@@ -1066,7 +995,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <button onClick={refresh} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, color: T.text }}>
+                  <button onClick={() => refresh(true)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, color: T.text }}>
                     <Icon.Sync /> Sync
                   </button>
                   <button onClick={handleExportCsv} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, color: T.text }}>
@@ -1078,16 +1007,10 @@ export default function AdminPage() {
 
             {isMobile && (
               <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                <button
-                  onClick={() => { setAddTab("individual"); setShowAddParticipant(true); }}
-                  style={{ flex: 1.4, padding: 14, borderRadius: 14, backgroundColor: T.blue, color: "#fff", border: "none", cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                >
+                <button onClick={() => { setAddTab("individual"); setShowAddParticipant(true); }} style={{ flex: 1.4, padding: 14, borderRadius: 14, backgroundColor: T.blue, color: "#fff", border: "none", cursor: "pointer", fontSize: 15, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <Icon.Plus /> Add Attendee
                 </button>
-                <button
-                  onClick={() => { setAddTab("bulk"); setShowAddParticipant(true); }}
-                  style={{ flex: 1, padding: 14, borderRadius: 14, backgroundColor: "#fff", color: T.text, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-                >
+                <button onClick={() => { setAddTab("bulk"); setShowAddParticipant(true); }} style={{ flex: 1, padding: 14, borderRadius: 14, backgroundColor: "#fff", color: T.text, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <Icon.Upload /> CSV
                 </button>
               </div>
@@ -1127,23 +1050,14 @@ export default function AdminPage() {
                     placeholder="Search by name, college, email, or ticket ID…"
                     style={{ flex: 1, border: "none", outline: "none", fontSize: 14, color: T.text, background: "transparent", fontFamily: FONT }}
                   />
-                  {searchQuery && (
-                    <button type="submit" style={{ border: "none", background: "none", cursor: "pointer", color: T.blue, fontSize: 13, fontWeight: 700, fontFamily: FONT }}>Search</button>
-                  )}
                 </div>
               </form>
               {!isMobile && (
                 <>
-                  <button
-                    onClick={() => { setAddTab("bulk"); setShowAddParticipant(true); }}
-                    style={{ padding: "12px 18px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8 }}
-                  >
+                  <button onClick={() => { setAddTab("bulk"); setShowAddParticipant(true); }} style={{ padding: "12px 18px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8 }}>
                     <Icon.Upload /> Bulk Upload CSV
                   </button>
-                  <button
-                    onClick={() => { setAddTab("individual"); setShowAddParticipant(true); }}
-                    style={{ padding: "12px 20px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}
-                  >
+                  <button onClick={() => { setAddTab("individual"); setShowAddParticipant(true); }} style={{ padding: "12px 20px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}>
                     <Icon.Plus /> Add Individual
                   </button>
                 </>
@@ -1221,21 +1135,13 @@ export default function AdminPage() {
                   Showing <strong style={{ color: T.text }}>{fromRow}</strong>–<strong style={{ color: T.text }}>{toRow}</strong> of <strong style={{ color: T.text }}>{participantTotal}</strong>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <button
-                    onClick={() => setParticipantPage((p) => Math.max(0, p - 1))}
-                    disabled={participantPage === 0}
-                    style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: participantPage === 0 ? "not-allowed" : "pointer", opacity: participantPage === 0 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}
-                  >
+                  <button onClick={() => setParticipantPage((p) => Math.max(0, p - 1))} disabled={participantPage === 0} style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: participantPage === 0 ? "not-allowed" : "pointer", opacity: participantPage === 0 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}>
                     <Icon.ChevronLeft />
                   </button>
                   <span style={{ fontSize: 13, fontWeight: 600, padding: "0 12px" }}>
                     Page {participantPage + 1} of {totalPages}
                   </span>
-                  <button
-                    onClick={() => setParticipantPage((p) => Math.min(totalPages - 1, p + 1))}
-                    disabled={participantPage >= totalPages - 1}
-                    style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: participantPage >= totalPages - 1 ? "not-allowed" : "pointer", opacity: participantPage >= totalPages - 1 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}
-                  >
+                  <button onClick={() => setParticipantPage((p) => Math.min(totalPages - 1, p + 1))} disabled={participantPage >= totalPages - 1} style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: participantPage >= totalPages - 1 ? "not-allowed" : "pointer", opacity: participantPage >= totalPages - 1 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}>
                     <Icon.ChevronRight />
                   </button>
                 </div>
@@ -1244,7 +1150,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ═══ VOLUNTEERS TAB ═══ */}
         {activeTab === "volunteers" && (
           <>
             <div style={{ backgroundColor: "#fff", borderRadius: 16, padding: 20, border: `1px solid ${T.border}`, boxShadow: T.shadow, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
@@ -1261,33 +1166,51 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => setShowAddStaff(true)}
-                style={{ padding: "12px 20px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}
-              >
-                <Icon.Plus /> Add Volunteer / Staff
-              </button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => loadVolunteers(true)} disabled={volunteersLoading} style={{ padding: "12px 18px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: volunteersLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8, opacity: volunteersLoading ? 0.6 : 1 }}>
+                  <Icon.Sync /> {volunteersLoading ? "Loading…" : "Refresh"}
+                </button>
+                <button onClick={() => setShowAddStaff(true)} style={{ padding: "12px 20px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}>
+                  <Icon.Plus /> Add Volunteer / Staff
+                </button>
+              </div>
             </div>
 
+            {volunteersError && (
+              <div style={{ padding: "12px 16px", borderRadius: 12, backgroundColor: T.redBg, color: "#C62828", fontSize: 13, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Icon.Alert /> {volunteersError}
+                </span>
+                <button onClick={() => loadVolunteers(true)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: T.red, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: FONT }}>
+                  Retry
+                </button>
+              </div>
+            )}
+
             <div style={{ backgroundColor: "#fff", borderRadius: 16, overflow: "hidden", border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ backgroundColor: "#FAFAFB" }}>
-                      {["STAFF MEMBER", "EMAIL", "ROLE", "STATUS", "ACTIONS"].map((h, i) => (
-                        <th key={h} style={{ padding: "12px 16px", textAlign: i === 4 ? "right" : "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {volunteers.map((v, idx) => (
-                      <tr key={idx} style={{ borderBottom: idx < volunteers.length - 1 ? `1px solid ${T.borderSoft}` : "none" }}>
-                        <td style={{ padding: "14px 16px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <div style={{ width: 38, height: 38, borderRadius: "50%", backgroundColor: avatarColor(v.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
-                              {initials(v.name)}
-                            </div>
-                            <div>
+              {volunteersLoading && volunteers.length === 0 ? (
+                <div style={{ padding: "60px 20px", textAlign: "center", color: T.textSec, fontSize: 14 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", border: `3px solid ${T.border}`, borderTopColor: T.blue, margin: "0 auto 14px", animation: "spin 0.8s linear infinite" }} />
+                  Loading staff…
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#FAFAFB" }}>
+                        {["STAFF MEMBER", "EMAIL", "ROLE", "STATUS", "ACTIONS"].map((h, i) => (
+                          <th key={h} style={{ padding: "12px 16px", textAlign: i === 4 ? "right" : "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {volunteers.map((v, idx) => (
+                        <tr key={idx} style={{ borderBottom: idx < volunteers.length - 1 ? `1px solid ${T.borderSoft}` : "none" }}>
+                          <td style={{ padding: "14px 16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <div style={{ width: 38, height: 38, borderRadius: "50%", backgroundColor: avatarColor(v.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
+                                {initials(v.name)}
+                              </div>
                               <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                                 {v.name}
                                 {v.id === staff?.id && (
@@ -1295,51 +1218,40 @@ export default function AdminPage() {
                                 )}
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td style={{ padding: "14px 16px" }}>
-                          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textSec }}>{v.email}</span>
-                        </td>
-                        <td style={{ padding: "14px 16px" }}><RolePill role={v.role} /></td>
-                        <td style={{ padding: "14px 16px" }}>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: v.active ? T.greenText : T.textTer }}>
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: v.active ? T.green : T.textTer }} />
-                            {v.active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                          <div style={{ display: "inline-flex", gap: 6 }}>
-                            <ActionIconButton
-                              title="Change role / status"
-                              tone="blue"
-                              onClick={() => openEditStaff(v)}
-                              icon={<Icon.Edit style={{ width: 14, height: 14 }} />}
-                            />
-                            <ActionIconButton
-                              title={v.id === staff?.id ? "Can't delete yourself" : "Delete staff"}
-                              tone="red"
-                              onClick={() => v.id === staff?.id ? alert("You can't delete your own account.") : setDeletingStaff(v)}
-                              icon={<Icon.X style={{ width: 14, height: 14 }} />}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {volunteers.length === 0 && (
-                      <tr>
-                        <td colSpan={5} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
-                          No staff members found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          </td>
+                          <td style={{ padding: "14px 16px" }}>
+                            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textSec }}>{v.email}</span>
+                          </td>
+                          <td style={{ padding: "14px 16px" }}><RolePill role={v.role} /></td>
+                          <td style={{ padding: "14px 16px" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: v.active ? T.greenText : T.textTer }}>
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: v.active ? T.green : T.textTer }} />
+                              {v.active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                            <div style={{ display: "inline-flex", gap: 6 }}>
+                              <ActionIconButton title="Change role / status" tone="blue" onClick={() => openEditStaff(v)} icon={<Icon.Edit style={{ width: 14, height: 14 }} />} />
+                              <ActionIconButton title={v.id === staff?.id ? "Can't delete yourself" : "Delete staff"} tone="red" onClick={() => v.id === staff?.id ? alert("You can't delete your own account.") : setDeletingStaff(v)} icon={<Icon.X style={{ width: 14, height: 14 }} />} />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {volunteers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
+                            {volunteersError ? "Failed to load staff. Click Retry above." : "No staff members found."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </>
         )}
 
-        {/* ═══ ANALYTICS TAB ═══ */}
         {activeTab === "analytics" && (
           <>
             <div style={{ backgroundColor: "#fff", borderRadius: 16, padding: 20, border: `1px solid ${T.border}`, boxShadow: T.shadow, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
@@ -1352,10 +1264,7 @@ export default function AdminPage() {
                   <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>Real-time scan telemetry and event statistics</div>
                 </div>
               </div>
-              <button
-                onClick={refresh}
-                style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, color: T.text }}
-              >
+              <button onClick={() => loadAnalytics(true)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, color: T.text }}>
                 <Icon.Sync /> Refresh
               </button>
             </div>
@@ -1415,17 +1324,12 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Mobile bottom nav */}
       {isMobile && (
         <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)", borderTop: `1px solid ${T.border}`, display: "flex", padding: "8px 0 10px" }}>
           {TABS.map((tab) => {
             const active = activeTab === tab.key;
             return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                style={{ flex: 1, border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: 4, fontFamily: FONT, color: active ? T.blue : T.textTer }}
-              >
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{ flex: 1, border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: 4, fontFamily: FONT, color: active ? T.blue : T.textTer }}>
                 {tab.icon}
                 <span style={{ fontSize: 10, fontWeight: 600 }}>{tab.short}</span>
               </button>
@@ -1434,13 +1338,11 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══ MODALS ═══ */}
-
       {showAddParticipant && (
         <Modal onClose={() => setShowAddParticipant(false)} width={addTab === "bulk" ? 940 : 500}>
           {addTab === "bulk" ? (
             <BulkCsvUploader
-              onImported={() => { loadStats(); loadParticipants(); }}
+              onImported={() => { loadStats(true); loadParticipants(true); }}
               onCancel={() => setShowAddParticipant(false)}
               onClose={() => setShowAddParticipant(false)}
             />
@@ -1450,16 +1352,10 @@ export default function AdminPage() {
               <p style={{ fontSize: 13, color: T.textSec, marginBottom: 16 }}>Issue ticket + QR instantly.</p>
 
               <div style={{ display: "flex", gap: 4, padding: 4, backgroundColor: T.bg, borderRadius: 10, marginBottom: 18 }}>
-                <button
-                  onClick={() => setAddTab("individual")}
-                  style={{ flex: 1, padding: "8px 12px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: FONT, backgroundColor: addTab === "individual" ? "#fff" : "transparent", color: addTab === "individual" ? T.text : T.textSec, boxShadow: addTab === "individual" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}
-                >
+                <button onClick={() => setAddTab("individual")} style={{ flex: 1, padding: "8px 12px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: FONT, backgroundColor: addTab === "individual" ? "#fff" : "transparent", color: addTab === "individual" ? T.text : T.textSec, boxShadow: addTab === "individual" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>
                   Individual Participant
                 </button>
-                <button
-                  onClick={() => setAddTab("bulk")}
-                  style={{ flex: 1, padding: "8px 12px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: FONT, backgroundColor: "transparent", color: T.textSec }}
-                >
+                <button onClick={() => setAddTab("bulk")} style={{ flex: 1, padding: "8px 12px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: FONT, backgroundColor: "transparent", color: T.textSec }}>
                   Bulk CSV Upload
                 </button>
               </div>
@@ -1532,7 +1428,6 @@ export default function AdminPage() {
         </Modal>
       )}
 
-      {/* EDIT STAFF (change role / status) */}
       {editingStaff && (
         <Modal onClose={() => setEditingStaff(null)}>
           <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Edit Staff Member</h3>
@@ -1541,11 +1436,7 @@ export default function AdminPage() {
           </p>
 
           <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textSec, letterSpacing: 0.5, marginBottom: 6 }}>ROLE</label>
-          <select
-            value={editRole}
-            onChange={(e) => setEditRole(e.target.value as any)}
-            style={inputStyle}
-          >
+          <select value={editRole} onChange={(e) => setEditRole(e.target.value as any)} style={inputStyle}>
             <option value="volunteer">Volunteer</option>
             <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
@@ -1560,11 +1451,7 @@ export default function AdminPage() {
           </label>
 
           <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={handleUpdateStaff}
-              disabled={staffActionBusy}
-              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}
-            >
+            <button onClick={handleUpdateStaff} disabled={staffActionBusy} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}>
               {staffActionBusy ? "Saving…" : "Save Changes"}
             </button>
             <button onClick={() => setEditingStaff(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
@@ -1574,7 +1461,6 @@ export default function AdminPage() {
         </Modal>
       )}
 
-      {/* DELETE STAFF CONFIRMATION */}
       {deletingStaff && (
         <Modal onClose={() => setDeletingStaff(null)} width={440}>
           <div style={{ width: 52, height: 52, borderRadius: "50%", backgroundColor: T.redBg, color: T.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }}>
@@ -1587,11 +1473,7 @@ export default function AdminPage() {
           </p>
 
           <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={handleDeleteStaff}
-              disabled={staffActionBusy}
-              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}
-            >
+            <button onClick={handleDeleteStaff} disabled={staffActionBusy} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: staffActionBusy ? 0.6 : 1 }}>
               {staffActionBusy ? "Deleting…" : "Yes, Delete"}
             </button>
             <button onClick={() => setDeletingStaff(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
@@ -1623,11 +1505,7 @@ export default function AdminPage() {
           <CopyBlock label="Ticket ID" value={createdTicket.ticket?.id || "—"} onCopy={() => copyToClipboard(createdTicket.ticket?.id || "", "Ticket ID")} subtle />
 
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <a
-              href={`${API_BASE}${createdTicket.qr_png_url}`}
-              download={`pass-${(createdTicket.participant?.name || "ticket").replace(/\s+/g, "-").toLowerCase()}.png`}
-              style={{ flex: 1, padding: 14, borderRadius: 12, backgroundColor: T.blue, color: "#fff", textDecoration: "none", textAlign: "center", fontSize: 14, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-            >
+            <a href={`${API_BASE}${createdTicket.qr_png_url}`} download={`pass-${(createdTicket.participant?.name || "ticket").replace(/\s+/g, "-").toLowerCase()}.png`} style={{ flex: 1, padding: 14, borderRadius: 12, backgroundColor: T.blue, color: "#fff", textDecoration: "none", textAlign: "center", fontSize: 14, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Icon.Download /> Download PNG
             </a>
             <button onClick={() => setCreatedTicket(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
@@ -1643,10 +1521,7 @@ export default function AdminPage() {
           <p style={{ fontSize: 13, color: T.textSec, marginBottom: 16 }}>Audit reason required:</p>
           <input type="text" value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="e.g. Lost device, damaged QR" style={inputStyle} />
           <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={handleTicketAction}
-              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: actionType === "revoke" ? T.red : T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, textTransform: "capitalize" }}
-            >
+            <button onClick={handleTicketAction} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: actionType === "revoke" ? T.red : T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, textTransform: "capitalize" }}>
               Confirm {actionType}
             </button>
             <button onClick={() => { setActionTicketId(null); setActionType(null); setActionReason(""); }} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
