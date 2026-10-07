@@ -40,6 +40,28 @@ class ImportTextRequest(BaseModel):
     event_id: str | None = None
 
 
+class CreateParticipantRequest(BaseModel):
+    name: str
+    email: str
+    college: str | None = None
+    photo_url: str | None = None
+    event_id: str | None = None
+    send_email: bool = False
+
+
+class CreateStaffRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Literal["volunteer", "supervisor", "admin"] = "volunteer"
+
+
+class UpdateStaffRequest(BaseModel):
+    role: Literal["volunteer", "supervisor", "admin"] | None = None
+    active: bool | None = None
+    name: str | None = None
+
+
 def _get_or_create_default_event(conn) -> str:
     row = conn.execute("SELECT id FROM events ORDER BY starts_at ASC NULLS LAST LIMIT 1;").fetchone()
     if row:
@@ -164,7 +186,6 @@ def issue_tickets(
     with pool.connection() as conn:
         target_event_id = req.event_id or _get_or_create_default_event(conn)
 
-        # Participants with no active tickets
         unissued = conn.execute(
             """
             SELECT p.id
@@ -209,7 +230,6 @@ def export_tickets_csv(
 ):
     """
     Export participants with their deterministic secret QR token and URL.
-    Format: participant_id, name, email, college, ticket_id, qr_token, qr_url
     """
     priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
 
@@ -255,9 +275,7 @@ def send_emails(
     staff: Annotated[StaffUser, Depends(require_role("admin"))],
 ):
     """
-    Send emails containing QR codes.
-    Mocked as requested by user; sets email_sent_at in DB.
-    Resending sends the exact same QR code.
+    Send emails containing QR codes (mocked).
     """
     pool = get_pool()
     priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
@@ -284,9 +302,7 @@ def send_emails(
         for r in rows:
             tid = r["ticket_id"]
             kid = r["key_id"]
-            # Deterministic token (same on resend)
             token = sign_token(priv_key, kid, tid)
-            # Update email_sent_at
             conn.execute(
                 "UPDATE tickets SET email_sent_at = now() WHERE id = %s;",
                 (str(tid),),
@@ -322,12 +338,10 @@ def get_ticket_qr_png(ticket_id: str):
 
     return Response(content=png_bytes, media_type="image/png")
 
+
 @router.get("/api/tickets/{ticket_id}/token")
 def get_ticket_token(ticket_id: str):
-    """
-    Return the signed QR token and URL for a ticket as JSON.
-    Used by the admin panel to display / copy the token manually.
-    """
+    """Return the signed QR token and URL for a ticket as JSON."""
     pool = get_pool()
     with pool.connection() as conn:
         row = conn.execute(
@@ -349,6 +363,7 @@ def get_ticket_token(ticket_id: str):
         "token": token,
         "url": url,
     }
+
 
 @router.post("/api/tickets/{ticket_id}/revoke")
 def revoke_ticket_endpoint(
@@ -466,21 +481,6 @@ def get_scan_logs(
 
     return {"logs": [dict(r) for r in rows]}
 
-class CreateParticipantRequest(BaseModel):
-    name: str
-    email: str
-    college: str | None = None
-    photo_url: str | None = None
-    event_id: str | None = None
-    send_email: bool = False
-
-
-class CreateStaffRequest(BaseModel):
-    name: str
-    email: str
-    password: str
-    role: Literal["volunteer", "supervisor", "admin"] = "volunteer"
-
 
 @router.post("/api/participants/create")
 def create_participant(
@@ -519,7 +519,6 @@ def create_participant(
                         "message": "A participant with this email already exists for this event"},
             )
 
-        # Auto-issue ticket
         tid = str(uuid.uuid4())
         conn.execute(
             """
@@ -529,13 +528,11 @@ def create_participant(
             (tid, target_event_id, pid, config.SIGNING_KEY_ID),
         )
 
-        # Optional: mark email as sent (mock)
         if req.send_email:
             conn.execute("UPDATE tickets SET email_sent_at = now() WHERE id = %s;", (tid,))
 
         conn.commit()
 
-    # Build token + QR URL for immediate display
     priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
     token = sign_token(priv_key, config.SIGNING_KEY_ID, uuid.UUID(tid))
     qr_url = build_qr_url(config.PUBLIC_BASE_URL, token)
@@ -599,6 +596,7 @@ def create_staff(
         "staff": {"id": sid, "name": name, "email": email, "role": req.role},
     }
 
+
 @router.get("/api/users")
 def list_staff(
     staff: Annotated[StaffUser, Depends(require_role("admin"))],
@@ -620,3 +618,126 @@ def list_staff(
             """
         ).fetchall()
     return {"staff": [dict(r) for r in rows]}
+
+
+@router.patch("/api/users/{user_id}")
+def update_staff(
+    user_id: str,
+    req: UpdateStaffRequest,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """
+    Update role / active flag / name. Admin only.
+    Guards:
+      - Cannot demote or deactivate the last active admin.
+    """
+    pool = get_pool()
+    with pool.connection() as conn:
+        target = conn.execute(
+            "SELECT id, role, active FROM staff WHERE id = %s;",
+            (user_id,),
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(status_code=404, detail={"reason": "not_found"})
+
+        new_role = req.role if req.role is not None else target["role"]
+        new_active = req.active if req.active is not None else target["active"]
+
+        # Guard: don't leave the system without an active admin
+        if target["role"] == "admin" and (new_role != "admin" or new_active is False):
+            admin_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM staff WHERE role = 'admin' AND active = true;"
+            ).fetchone()["n"]
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "reason": "last_admin",
+                        "message": "Cannot demote or deactivate the last active admin.",
+                    },
+                )
+
+        sets: list[str] = []
+        params: dict = {"id": user_id}
+        if req.role is not None:
+            sets.append("role = %(role)s")
+            params["role"] = req.role
+        if req.active is not None:
+            sets.append("active = %(active)s")
+            params["active"] = req.active
+        if req.name is not None and req.name.strip():
+            sets.append("name = %(name)s")
+            params["name"] = req.name.strip()
+
+        if not sets:
+            return {"status": "noop"}
+
+        conn.execute(
+            f"UPDATE staff SET {', '.join(sets)} WHERE id = %(id)s;",
+            params,
+        )
+        conn.commit()
+
+        updated = conn.execute(
+            "SELECT id, name, email, role, active FROM staff WHERE id = %s;",
+            (user_id,),
+        ).fetchone()
+
+    return {"status": "updated", "staff": dict(updated)}
+
+
+@router.delete("/api/users/{user_id}")
+def delete_staff(
+    user_id: str,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """
+    Delete a staff member. Admin only.
+    Guards:
+      - Cannot delete yourself.
+      - Cannot delete the last active admin.
+    Preserves audit history by nulling staff references in scan_log and tickets.
+    """
+    if user_id == staff.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "reason": "cannot_delete_self",
+                "message": "You can't delete your own account.",
+            },
+        )
+
+    pool = get_pool()
+    with pool.connection() as conn:
+        target = conn.execute(
+            "SELECT id, role, active FROM staff WHERE id = %s;",
+            (user_id,),
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(status_code=404, detail={"reason": "not_found"})
+
+        if target["role"] == "admin" and target["active"]:
+            admin_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM staff WHERE role = 'admin' AND active = true;"
+            ).fetchone()["n"]
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "reason": "last_admin",
+                        "message": "Cannot delete the last active admin.",
+                    },
+                )
+
+        # Preserve audit history: null out staff references rather than
+        # deleting logged events.
+        conn.execute("UPDATE scan_log SET staff_id = NULL WHERE staff_id = %s;", (user_id,))
+        conn.execute("UPDATE tickets SET pending_by = NULL WHERE pending_by = %s;", (user_id,))
+        conn.execute("UPDATE tickets SET checked_in_by = NULL WHERE checked_in_by = %s;", (user_id,))
+
+        conn.execute("DELETE FROM staff WHERE id = %s;", (user_id,))
+        conn.commit()
+
+    return {"status": "deleted"}

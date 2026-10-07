@@ -1,11 +1,17 @@
 """FastAPI application entry point."""
 
+import base64
 import logging
 import os
+import traceback
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from app import config
 from app.db import init_pool, close_pool, health_check, run_migrations
@@ -39,6 +45,30 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("All migrations up to date.")
 
+    # ─── Ensure signing key is registered in DB ───────────────────
+    # Idempotent: safe on every cold start. Recovers from a wiped DB.
+    try:
+        _seed = base64.b64decode(config.SIGNING_PRIVATE_KEY)
+        if len(_seed) != 32:
+            raise ValueError(f"SIGNING_PRIVATE_KEY must decode to 32 bytes, got {len(_seed)}")
+        _priv = ed25519.Ed25519PrivateKey.from_private_bytes(_seed)
+        _pub = _priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+        with pool.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO signing_keys (key_id, public_key, active)
+                VALUES (%s, %s, true)
+                ON CONFLICT (key_id) DO UPDATE
+                SET public_key = EXCLUDED.public_key, active = true
+                """,
+                (config.SIGNING_KEY_ID, _pub),
+            )
+            conn.commit()
+        logger.info("Signing key %s registered/updated in DB", config.SIGNING_KEY_ID)
+    except Exception as e:
+        logger.error("Failed to register signing key: %s", e)
+
     # Refresh public key cache
     with pool.connection() as conn:
         keys = refresh_public_keys(conn)
@@ -70,6 +100,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Global exception handler ─────────────────────────────────────
+# Ensures 500s still carry CORS headers so the browser shows the real
+# error instead of a misleading CORS block.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+
+    origin = request.headers.get("origin", "")
+    allow = origin if origin in allowed_origins else (
+        allowed_origins[0] if allowed_origins else "*"
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": allow,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        },
+    )
+
 
 app.include_router(public_router)
 app.include_router(auth_router)
