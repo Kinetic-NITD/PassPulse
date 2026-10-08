@@ -12,8 +12,6 @@ interface TicketInfo {
   college: string | null;
   photo_url: string | null;
   event_name: string;
-  event_starts: string | null;
-  event_ends: string | null;
   status: "issued" | "pending" | "checked_in";
   checked_in_at: string | null;
 }
@@ -128,8 +126,6 @@ export default function PublicTicketPage({
   }
 
   const alreadyCheckedIn = info.status === "checked_in";
-  const fmt = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—";
 
   return (
     <Shell>
@@ -241,12 +237,6 @@ export default function PublicTicketPage({
         <div style={{ height: 1, backgroundColor: "rgba(255,255,255,0.06)", margin: "8px 0" }} />
 
         <Row label="Event" value={info.event_name} />
-        {info.event_starts && (
-          <Row label="Starts" value={fmt(info.event_starts)} />
-        )}
-        {info.event_ends && (
-          <Row label="Ends" value={fmt(info.event_ends)} />
-        )}
       </div>
 
       {/* The QR — generated client-side, zero server load */}
@@ -308,15 +298,34 @@ export default function PublicTicketPage({
           color: "#FF9500",
           lineHeight: 1.5,
           textAlign: "left",
-          marginBottom: 16,
+          marginBottom: 12,
         }}
       >
         <strong>Single-use pass.</strong> Do not share this QR with anyone.
         It will only work once at the check-in gate.
       </div>
 
+      {/* Reissue / multi-day instruction */}
+      <div
+        style={{
+          backgroundColor: "rgba(0,122,255,0.1)",
+          border: "1px solid rgba(0,122,255,0.25)",
+          borderRadius: 12,
+          padding: "10px 12px",
+          fontSize: 12,
+          color: "#5AC8FA",
+          lineHeight: 1.5,
+          textAlign: "left",
+          marginBottom: 16,
+        }}
+      >
+        <strong>Checking out of the institute?</strong> If you check out and
+        will need to check in again on another day, inform the event volunteers
+        or co-ordinators so they can reissue your pass.
+      </div>
+
       <div style={{ fontSize: 11, color: "#636366" }}>
-        PassPulse • Single-Use Turnstile Security
+        Single-Use Security - SUS
       </div>
     </Shell>
   );
