@@ -305,4 +305,16 @@ export const api = {
   // ─── Public ticket lookup (no auth needed but token is fine) ──
   getTicketByToken: (token: string) =>
     request(`/api/tickets/by-token/${encodeURIComponent(token)}`, { method: "GET" }),
+
+    getEvent: (force = false) =>
+    cachedGet<any>("event", "/api/event", force),
+
+  updateEvent: async (name: string) => {
+    const res = await request("/api/event", {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+    invalidateCache("event");
+    return res;
+  },
 };

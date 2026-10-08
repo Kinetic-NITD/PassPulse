@@ -614,6 +614,13 @@ export default function AdminPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("participants");
 
+  // ─── Event info ──────────────────────────────────────────────
+  const [eventInfo, setEventInfo] = useState<any>(null);
+  const [showEditEvent, setShowEditEvent] = useState(false);
+  const [editEventName, setEditEventName] = useState("");
+  const [eventSaving, setEventSaving] = useState(false);
+  const [eventError, setEventError] = useState<string | null>(null);
+
   const [stats, setStats] = useState<any>({
     participants: 0,
     tickets: { total: 0, issued: 0, pending: 0, checked_in: 0, revoked: 0 },
@@ -655,7 +662,6 @@ export default function AdminPage() {
   const [actionType, setActionType] = useState<"revoke" | "reissue" | null>(null);
   const [actionReason, setActionReason] = useState("");
 
-  // ─── Participant deletion state ───────────────────────────────
   const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
   const [deletingParticipant, setDeletingParticipant] = useState<any | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -677,6 +683,15 @@ export default function AdminPage() {
 
   const loadStats = useCallback(async (force = false) => {
     try { setStats(await api.getStats(force)); } catch (e) { console.error(e); }
+  }, []);
+
+  const loadEvent = useCallback(async (force = false) => {
+    try {
+      const data = await api.getEvent(force);
+      setEventInfo(data);
+    } catch (e: any) {
+      console.error("loadEvent failed:", e);
+    }
   }, []);
 
   const loadParticipants = useCallback(async (force = false) => {
@@ -712,7 +727,8 @@ export default function AdminPage() {
   useEffect(() => {
     if (!staff) return;
     loadStats();
-  }, [staff, loadStats]);
+    loadEvent();
+  }, [staff, loadStats, loadEvent]);
 
   useEffect(() => {
     if (!staff || activeTab !== "participants") return;
@@ -731,6 +747,7 @@ export default function AdminPage() {
 
   const refresh = (force = false) => {
     loadStats(force);
+    loadEvent(force);
     if (activeTab === "participants") loadParticipants(force);
     else if (activeTab === "volunteers") loadVolunteers(force);
     else if (activeTab === "analytics") loadAnalytics(force);
@@ -739,6 +756,36 @@ export default function AdminPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setParticipantPage(0);
+  };
+
+  const openEditEvent = () => {
+    setEditEventName(eventInfo?.name || "");
+    setEventError(null);
+    setShowEditEvent(true);
+  };
+
+  const handleSaveEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = editEventName.trim();
+    if (!trimmed) {
+      setEventError("Event name cannot be empty");
+      return;
+    }
+    if (trimmed.length > 120) {
+      setEventError("Event name must be 120 characters or fewer");
+      return;
+    }
+    setEventSaving(true);
+    setEventError(null);
+    try {
+      const res = await api.updateEvent(trimmed);
+      setEventInfo(res.event);
+      setShowEditEvent(false);
+    } catch (err: any) {
+      setEventError(err?.detail?.message || err?.message || "Failed to save");
+    } finally {
+      setEventSaving(false);
+    }
   };
 
   const handleExportCsv = async () => {
@@ -842,7 +889,6 @@ export default function AdminPage() {
     }
   };
 
-  // ─── Participant delete handlers ──────────────────────────────
   const toggleParticipantSelected = (id: string) => {
     setSelectedParticipants((prev) => {
       const next = new Set(prev);
@@ -951,6 +997,8 @@ export default function AdminPage() {
   const allSelected =
     participants.length > 0 && selectedParticipants.size === participants.length;
 
+  const eventName = eventInfo?.name || "Loading…";
+
   const TABS: { key: TabKey; label: string; icon: React.ReactNode; short: string }[] = [
     { key: "participants", label: "Participants & Registration", short: "Attendees", icon: <Icon.IdCardTab /> },
     { key: "volunteers", label: "Gate Volunteers", short: "Volunteers", icon: <Icon.UsersTab /> },
@@ -973,7 +1021,20 @@ export default function AdminPage() {
               <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>PassPulse</span>
               <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, padding: "2px 6px", borderRadius: 4, backgroundColor: "#E5E5EA", color: T.textSec }}>ADMIN</span>
             </div>
-            <div style={{ fontSize: 11, color: T.textSec }}>HackSummit 2025</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: T.textSec }}>{eventName}</span>
+              <button
+                onClick={openEditEvent}
+                title="Edit event name"
+                style={{
+                  border: "none", background: "none", cursor: "pointer",
+                  color: T.textTer, padding: 2, display: "flex",
+                  alignItems: "center", borderRadius: 4,
+                }}
+              >
+                <Icon.Edit style={{ width: 11, height: 11 }} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1405,7 +1466,7 @@ export default function AdminPage() {
               <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>Recent Scan Activity</div>
-                  <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>Live gate telemetry</div>
+                  <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>Live gate telemetry • ID card numbers logged for traceability</div>
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 700, color: T.greenText, backgroundColor: T.greenBg, padding: "4px 10px", borderRadius: 20 }}>● Live</span>
               </div>
@@ -1413,30 +1474,49 @@ export default function AdminPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#FAFAFB" }}>
-                      {["TIME", "PARTICIPANT", "ACTION", "RESULT", "STAFF"].map((h) => (
+                      {["TIME", "PARTICIPANT", "ACTION", "ID CARD", "RESULT", "STAFF"].map((h) => (
                         <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {scanLogs.map((log, idx) => (
-                      <tr key={idx} style={{ borderBottom: idx < scanLogs.length - 1 ? `1px solid ${T.borderSoft}` : "none" }}>
-                        <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec, fontFamily: "ui-monospace, monospace" }}>
-                          {new Date(log.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                        </td>
-                        <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600 }}>
-                          {log.participant_name || log.detail?.name || `#${log.ticket_id?.slice(0, 8) || "—"}`}
-                        </td>
-                        <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec, textTransform: "capitalize" }}>{log.action}</td>
-                        <td style={{ padding: "12px 16px" }}>
-                          <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, backgroundColor: log.result === "success" ? T.greenBg : T.redBg, color: log.result === "success" ? T.greenText : "#C62828" }}>{log.result}</span>
-                        </td>
-                        <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec }}>{log.staff_name || "—"}</td>
-                      </tr>
-                    ))}
+                    {scanLogs.map((log, idx) => {
+                      const idCard = log.detail?.id_card_no || null;
+                      return (
+                        <tr key={idx} style={{ borderBottom: idx < scanLogs.length - 1 ? `1px solid ${T.borderSoft}` : "none" }}>
+                          <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec, fontFamily: "ui-monospace, monospace" }}>
+                            {new Date(log.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                          </td>
+                          <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600 }}>
+                            {log.participant_name || log.detail?.name || `#${log.ticket_id?.slice(0, 8) || "—"}`}
+                          </td>
+                          <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec, textTransform: "capitalize" }}>{log.action}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            {idCard ? (
+                              <span style={{
+                                display: "inline-flex", alignItems: "center", gap: 6,
+                                padding: "3px 10px", borderRadius: 8,
+                                backgroundColor: "#F2F4F7",
+                                fontFamily: "ui-monospace, monospace",
+                                fontSize: 11, fontWeight: 700, color: T.text,
+                              }}>
+                                <Icon.IdCard style={{ width: 12, height: 12, color: T.blue }} />
+                                {idCard}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12, color: T.textTer }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, backgroundColor: log.result === "success" ? T.greenBg : T.redBg, color: log.result === "success" ? T.greenText : "#C62828" }}>{log.result}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px", fontSize: 12, color: T.textSec }}>{log.staff_name || "—"}</td>
+                        </tr>
+                      );
+                    })}
                     {scanLogs.length === 0 && (
                       <tr>
-                        <td colSpan={5} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
+                        <td colSpan={6} style={{ padding: 40, textAlign: "center", color: T.textSec, fontSize: 14 }}>
                           No scan activity yet.
                         </td>
                       </tr>
@@ -1461,6 +1541,55 @@ export default function AdminPage() {
             );
           })}
         </div>
+      )}
+
+      {/* Edit Event modal */}
+      {showEditEvent && (
+        <Modal onClose={() => setShowEditEvent(false)} width={480}>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Edit Event</h3>
+          <p style={{ fontSize: 13, color: T.textSec, marginBottom: 16 }}>
+            This name appears on the public ticket page and the scanner.
+          </p>
+          <form onSubmit={handleSaveEvent}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textSec, letterSpacing: 0.5, marginBottom: 6 }}>EVENT NAME *</label>
+            <input
+              type="text"
+              value={editEventName}
+              onChange={(e) => { setEditEventName(e.target.value); setEventError(null); }}
+              placeholder="HackSummit 2025"
+              maxLength={120}
+              autoFocus
+              required
+              style={inputStyle}
+            />
+            {eventError && (
+              <div style={{ padding: "10px 12px", borderRadius: 10, backgroundColor: T.redBg, color: "#C62828", fontSize: 13, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon.Alert /> {eventError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="submit"
+                disabled={eventSaving}
+                style={{
+                  flex: 1, padding: 14, borderRadius: 12, border: "none",
+                  backgroundColor: T.blue, color: "#fff", fontSize: 14,
+                  fontWeight: 700, cursor: eventSaving ? "not-allowed" : "pointer",
+                  fontFamily: FONT, opacity: eventSaving ? 0.6 : 1,
+                }}
+              >
+                {eventSaving ? "Saving…" : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEditEvent(false)}
+                style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {showAddParticipant && (

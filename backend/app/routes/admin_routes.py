@@ -61,6 +61,97 @@ class UpdateStaffRequest(BaseModel):
     active: bool | None = None
     name: str | None = None
 
+class UpdateEventRequest(BaseModel):
+    name: str | None = None
+
+
+@router.get("/api/event")
+def get_current_event(
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """Return the current default event."""
+    pool = get_pool()
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, starts_at, ends_at
+            FROM events
+            ORDER BY starts_at ASC NULLS LAST
+            LIMIT 1;
+            """
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail={"reason": "no_event"})
+
+    return {
+        "id": str(row["id"]),
+        "name": row["name"],
+        "starts_at": row["starts_at"].isoformat() if row["starts_at"] else None,
+        "ends_at": row["ends_at"].isoformat() if row["ends_at"] else None,
+    }
+
+
+@router.patch("/api/event")
+def update_current_event(
+    req: UpdateEventRequest,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """Update the current event's name."""
+    if req.name is None:
+        return {"status": "noop"}
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "invalid_input", "message": "Event name cannot be empty"},
+        )
+    if len(name) > 120:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "invalid_input", "message": "Event name must be 120 characters or fewer"},
+        )
+
+    pool = get_pool()
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM events ORDER BY starts_at ASC NULLS LAST LIMIT 1;"
+        ).fetchone()
+
+        if not row:
+            # Auto-create if the DB is empty
+            eid = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO events (id, name) VALUES (%s, %s);",
+                (eid, name),
+            )
+            conn.commit()
+            return {
+                "status": "created",
+                "event": {"id": eid, "name": name, "starts_at": None, "ends_at": None},
+            }
+
+        conn.execute(
+            "UPDATE events SET name = %s WHERE id = %s;",
+            (name, str(row["id"])),
+        )
+        conn.commit()
+
+        updated = conn.execute(
+            "SELECT id, name, starts_at, ends_at FROM events WHERE id = %s;",
+            (str(row["id"]),),
+        ).fetchone()
+
+    return {
+        "status": "updated",
+        "event": {
+            "id": str(updated["id"]),
+            "name": updated["name"],
+            "starts_at": updated["starts_at"].isoformat() if updated["starts_at"] else None,
+            "ends_at": updated["ends_at"].isoformat() if updated["ends_at"] else None,
+        },
+    }
 
 def _get_or_create_default_event(conn) -> str:
     row = conn.execute("SELECT id FROM events ORDER BY starts_at ASC NULLS LAST LIMIT 1;").fetchone()
