@@ -1,11 +1,15 @@
 """Public unauthenticated routes."""
 
 import base64
-from fastapi import APIRouter
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
 
 from app.db import get_pool
-from app.key_cache import refresh_public_keys
+from app.key_cache import refresh_public_keys, get_cached_keys
+from app.tokens import verify_token, extract_token_from_url
+from cryptography.exceptions import InvalidSignature
 
 router = APIRouter(tags=["public"])
 
@@ -27,26 +31,94 @@ def get_public_keys():
     return res
 
 
-@router.get("/t/{token}", response_class=HTMLResponse)
-def public_ticket_page(token: str):
-    return """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Event Pass — PassPulse</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0b0f19; color: #fff; text-align: center; }
-        .card { background: rgba(255,255,255,0.06); padding: 40px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.12); max-width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-        h1 { font-size: 24px; margin: 0 0 12px 0; color: #007AFF; }
-        p { color: #8E8E93; font-size: 15px; margin: 0; line-height: 1.5; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>Event Pass</h1>
-        <p>Show this QR code at the check-in gate for venue admission.</p>
-    </div>
-</body>
-</html>
-"""
+@router.get("/api/tickets/by-token/{token}")
+def get_ticket_by_token(token: str):
+    """
+    Public endpoint. Given a signed QR token, verify it and return
+    safe, participant-facing details for the ticket page.
+    No sensitive info (no ticket ID, no card number, no staff names).
+    """
+    raw = extract_token_from_url(token)
+
+    pool = get_pool()
+
+    # Load/cached public keys
+    cached = get_cached_keys()
+    if not cached:
+        with pool.connection() as conn:
+            cached = refresh_public_keys(conn)
+
+    try:
+        parsed = verify_token(raw, cached)
+    except InvalidSignature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "bad_signature", "message": "This pass is not valid for this event."},
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "unknown_key", "message": "This pass was issued by an unknown signing key."},
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "malformed", "message": str(e)},
+        )
+
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                t.status AS ticket_status,
+                t.checked_in_at,
+                p.name AS participant_name,
+                p.email,
+                p.college,
+                p.photo_url,
+                e.name AS event_name,
+                e.starts_at,
+                e.ends_at
+            FROM tickets t
+            JOIN participants p ON t.participant_id = p.id
+            JOIN events e ON t.event_id = e.id
+            WHERE t.id = %s;
+            """,
+            (str(parsed.ticket_id),),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"reason": "not_found", "message": "This pass does not exist."},
+        )
+
+    status_val = row["ticket_status"]
+
+    # Revoked passes shouldn't show any useful info
+    if status_val == "revoked":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={"reason": "revoked", "message": "This pass has been revoked."},
+        )
+
+    # Mask email — show first 2 chars + domain
+    email = row["email"] or ""
+    if "@" in email:
+        local, domain = email.split("@", 1)
+        masked = (local[:2] + "***") if len(local) > 2 else "***"
+        email_masked = f"{masked}@{domain}"
+    else:
+        email_masked = "***"
+
+    return {
+        "participant_name": row["participant_name"],
+        "email_masked": email_masked,
+        "college": row["college"],
+        "photo_url": row["photo_url"],
+        "event_name": row["event_name"],
+        "event_starts": row["starts_at"].isoformat() if row["starts_at"] else None,
+        "event_ends": row["ends_at"].isoformat() if row["ends_at"] else None,
+        "status": status_val,  # 'issued' | 'pending' | 'checked_in'
+        "checked_in_at": row["checked_in_at"].isoformat() if row["checked_in_at"] else None,
+    }

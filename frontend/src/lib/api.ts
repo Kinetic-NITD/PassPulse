@@ -283,4 +283,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action, reason, id_card_no: idCardNo }),
     }),
+
+  // ─── Participant deletion ─────────────────────────────────
+  deleteParticipant: async (participantId: string) => {
+    const res = await request(`/api/participants/${participantId}`, {
+      method: "DELETE",
+    });
+    invalidateCache();
+    return res;
+  },
+
+  bulkDeleteParticipants: async (ids: string[]) => {
+    const res = await request("/api/participants/delete-bulk", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    invalidateCache();
+    return res;
+  },
+
+  // ─── Public ticket lookup (no auth needed but token is fine) ──
+  getTicketByToken: (token: string) =>
+    request(`/api/tickets/by-token/${encodeURIComponent(token)}`, { method: "GET" }),
 };

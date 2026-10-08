@@ -229,7 +229,9 @@ def export_tickets_csv(
     event_id: str | None = None,
 ):
     """
-    Export participants with their deterministic secret QR token and URL.
+    Export participants with their QR URL and token, formatted for
+    direct sharing with attendees. The QR URL is the participant's
+    single-use digital pass — send it once, privately, to each person.
     """
     priv_key = private_key_from_seed(config.SIGNING_PRIVATE_KEY)
 
@@ -241,9 +243,12 @@ def export_tickets_csv(
         rows = conn.execute(
             f"""
             SELECT p.id AS participant_id, p.name, p.email, p.college,
-                   t.id AS ticket_id, t.key_id, t.status
+                   t.id AS ticket_id, t.key_id, t.status,
+                   e.name AS event_name, e.starts_at, e.ends_at
             FROM participants p
-            JOIN tickets t ON t.participant_id = p.id AND t.status IN ('issued', 'pending', 'checked_in')
+            JOIN tickets t ON t.participant_id = p.id
+                AND t.status IN ('issued', 'pending', 'checked_in')
+            JOIN events e ON t.event_id = e.id
             {ev_filter}
             ORDER BY p.name ASC;
             """,
@@ -252,22 +257,50 @@ def export_tickets_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["name", "email", "college", "ticket_id", "status", "qr_token", "qr_url"])
+    writer.writerow([
+        "participant_id",
+        "name",
+        "email",
+        "college",
+        "event_name",
+        "ticket_id",
+        "status",
+        "qr_url",
+        "qr_token",
+        "notice",
+    ])
+
+    NOTICE = (
+        "This is your single-use entry pass. Do not share it with anyone. "
+        "It will only work once at the check-in gate."
+    )
 
     for r in rows:
         tid = r["ticket_id"]
         kid = r["key_id"]
         token = sign_token(priv_key, kid, tid)
         qr_url = build_qr_url(config.PUBLIC_BASE_URL, token)
-        writer.writerow([r["name"], r["email"], r["college"] or "", str(tid), r["status"], token, qr_url])
+        writer.writerow([
+            str(r["participant_id"]),
+            r["name"],
+            r["email"],
+            r["college"] or "",
+            r["event_name"],
+            str(tid),
+            r["status"],
+            qr_url,
+            token,
+            NOTICE,
+        ])
 
     csv_data = output.getvalue()
     return Response(
         content=csv_data,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="participants_qr_tokens.csv"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="participants_qr_pass_urls.csv"'
+        },
     )
-
 
 @router.post("/api/emails/send")
 def send_emails(
@@ -792,3 +825,106 @@ def delete_staff(
         conn.commit()
 
     return {"status": "deleted"}
+
+# ─── Participant deletion ────────────────────────────────────────
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str]
+
+
+@router.delete("/api/participants/{participant_id}")
+def delete_participant(
+    participant_id: str,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """
+    Delete a participant and all their tickets.
+    Detaches scan_log entries (audit trail keeps the row but loses the ticket link).
+    """
+    pool = get_pool()
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT id, name, email FROM participants WHERE id = %s;",
+            (participant_id,),
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"reason": "not_found", "message": "Participant not found"},
+            )
+
+        # Detach scan_log entries (ticket_id has no FK, but null it for cleanliness)
+        conn.execute(
+            """
+            UPDATE scan_log
+            SET ticket_id = NULL
+            WHERE ticket_id IN (
+                SELECT id FROM tickets WHERE participant_id = %s
+            );
+            """,
+            (participant_id,),
+        )
+
+        # Delete all tickets for this participant
+        conn.execute("DELETE FROM tickets WHERE participant_id = %s;", (participant_id,))
+
+        # Delete the participant
+        conn.execute("DELETE FROM participants WHERE id = %s;", (participant_id,))
+
+        conn.commit()
+
+    return {
+        "status": "deleted",
+        "participant": {"id": str(row["id"]), "name": row["name"], "email": row["email"]},
+    }
+
+
+@router.post("/api/participants/delete-bulk")
+def delete_participants_bulk(
+    req: BulkDeleteRequest,
+    staff: Annotated[StaffUser, Depends(require_role("admin"))],
+):
+    """Bulk delete participants by ID. Returns count of deleted rows."""
+    if not req.ids:
+        return {"status": "noop", "deleted": 0, "not_found": []}
+
+    pool = get_pool()
+    with pool.connection() as conn:
+        # Which ones exist?
+        existing = conn.execute(
+            "SELECT id FROM participants WHERE id = ANY(%s::uuid[]);",
+            (req.ids,),
+        ).fetchall()
+        existing_ids = [str(r["id"]) for r in existing]
+        missing = [i for i in req.ids if i not in existing_ids]
+
+        if existing_ids:
+            # Detach scan_log for the tickets we're about to remove
+            conn.execute(
+                """
+                UPDATE scan_log
+                SET ticket_id = NULL
+                WHERE ticket_id IN (
+                    SELECT id FROM tickets WHERE participant_id = ANY(%s::uuid[])
+                );
+                """,
+                (existing_ids,),
+            )
+            # Delete tickets
+            conn.execute(
+                "DELETE FROM tickets WHERE participant_id = ANY(%s::uuid[]);",
+                (existing_ids,),
+            )
+            # Delete participants
+            conn.execute(
+                "DELETE FROM participants WHERE id = ANY(%s::uuid[]);",
+                (existing_ids,),
+            )
+            conn.commit()
+
+    return {
+        "status": "completed",
+        "deleted": len(existing_ids),
+        "not_found": missing,
+    }

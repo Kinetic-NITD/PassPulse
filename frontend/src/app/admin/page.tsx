@@ -76,6 +76,8 @@ const Icon = {
   ChevronLeft: (p: any) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6" /></svg>,
   ChevronRight: (p: any) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="9 18 15 12 9 6" /></svg>,
   Edit: (p: any) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>,
+  Trash: (p: any) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>,
+  LogOut: (p: any) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>,
 };
 
 function StatusPill({ status }: { status: string | null }) {
@@ -653,6 +655,12 @@ export default function AdminPage() {
   const [actionType, setActionType] = useState<"revoke" | "reissue" | null>(null);
   const [actionReason, setActionReason] = useState("");
 
+  // ─── Participant deletion state ───────────────────────────────
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
+  const [deletingParticipant, setDeletingParticipant] = useState<any | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 820);
     check();
@@ -744,7 +752,7 @@ export default function AdminPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "participants_qr_tokens.csv";
+      a.download = "participants_qr_pass_urls.csv";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -834,6 +842,61 @@ export default function AdminPage() {
     }
   };
 
+  // ─── Participant delete handlers ──────────────────────────────
+  const toggleParticipantSelected = (id: string) => {
+    setSelectedParticipants((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedParticipants.size === participants.length && participants.length > 0) {
+      setSelectedParticipants(new Set());
+    } else {
+      setSelectedParticipants(new Set(participants.map((p) => p.id)));
+    }
+  };
+
+  const handleDeleteParticipant = async () => {
+    if (!deletingParticipant) return;
+    setDeleteBusy(true);
+    try {
+      await api.deleteParticipant(deletingParticipant.id);
+      setSelectedParticipants((prev) => {
+        const next = new Set(prev);
+        next.delete(deletingParticipant.id);
+        return next;
+      });
+      setDeletingParticipant(null);
+      loadStats(true);
+      loadParticipants(true);
+    } catch (err: any) {
+      alert("Delete failed: " + (err.detail?.message || err.message));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedParticipants.size === 0) return;
+    setDeleteBusy(true);
+    try {
+      const res = await api.bulkDeleteParticipants(Array.from(selectedParticipants));
+      alert(`Deleted ${res.deleted} participant(s)`);
+      setSelectedParticipants(new Set());
+      setBulkDeleteOpen(false);
+      loadStats(true);
+      loadParticipants(true);
+    } catch (err: any) {
+      alert("Bulk delete failed: " + (err.detail?.message || err.message));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const handleShowQr = async (p: any) => {
     try {
       const data = await api.getTicketToken(p.ticket_id);
@@ -867,7 +930,11 @@ export default function AdminPage() {
     alert(`${label} copied`);
   };
 
-  const handleLogout = () => { removeToken(); router.push("/login"); };
+  const handleLogout = () => {
+    if (!confirm("Log out of PassPulse?")) return;
+    removeToken();
+    router.push("/login");
+  };
 
   if (!staff) return null;
 
@@ -880,6 +947,9 @@ export default function AdminPage() {
   const totalPages = Math.max(1, Math.ceil(participantTotal / PAGE_SIZE));
   const fromRow = participantTotal === 0 ? 0 : participantPage * PAGE_SIZE + 1;
   const toRow = Math.min(participantTotal, (participantPage + 1) * PAGE_SIZE);
+
+  const allSelected =
+    participants.length > 0 && selectedParticipants.size === participants.length;
 
   const TABS: { key: TabKey; label: string; icon: React.ReactNode; short: string }[] = [
     { key: "participants", label: "Participants & Registration", short: "Attendees", icon: <Icon.IdCardTab /> },
@@ -939,16 +1009,39 @@ export default function AdminPage() {
               <Icon.Bell />
             </button>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", backgroundColor: "#1D1D1F", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>
-              {initials(staff.name || "U")}
-            </div>
-            {!isMobile && (
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{staff.name}</div>
-                <div style={{ fontSize: 10, color: T.blue, fontWeight: 700, letterSpacing: 0.5 }}>LEAD ORGANIZER</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", backgroundColor: "#1D1D1F", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>
+                {initials(staff.name || "U")}
               </div>
-            )}
+              {!isMobile && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{staff.name}</div>
+                  <div style={{ fontSize: 10, color: T.blue, fontWeight: 700, letterSpacing: 0.5 }}>LEAD ORGANIZER</div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: `1px solid ${T.border}`,
+                backgroundColor: "#fff",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: FONT,
+                color: T.red,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Icon.LogOut />
+              {!isMobile && "Log out"}
+            </button>
           </div>
         </div>
       </div>
@@ -1054,6 +1147,19 @@ export default function AdminPage() {
               </form>
               {!isMobile && (
                 <>
+                  {selectedParticipants.size > 0 && (
+                    <button
+                      onClick={() => setBulkDeleteOpen(true)}
+                      style={{
+                        padding: "12px 18px", borderRadius: 12, border: "none",
+                        backgroundColor: T.redBg, color: T.red,
+                        cursor: "pointer", fontSize: 13, fontWeight: 700,
+                        fontFamily: FONT, display: "flex", alignItems: "center", gap: 8,
+                      }}
+                    >
+                      <Icon.Trash /> Delete {selectedParticipants.size} selected
+                    </button>
+                  )}
                   <button onClick={() => { setAddTab("bulk"); setShowAddParticipant(true); }} style={{ padding: "12px 18px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8 }}>
                     <Icon.Upload /> Bulk Upload CSV
                   </button>
@@ -1069,8 +1175,16 @@ export default function AdminPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ backgroundColor: "#FAFAFB" }}>
-                      {["", "PARTICIPANT", "COLLEGE / UNIVERSITY", "CONTACT EMAIL", "TICKET ID", "QR STATUS", "ACTIONS"].map((h, i) => (
-                        <th key={i} style={{ padding: "12px 16px", textAlign: i === 6 ? "right" : "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                      <th style={{ padding: "12px 16px", textAlign: "left", width: 40, borderBottom: `1px solid ${T.border}` }}>
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          style={{ cursor: "pointer" }}
+                        />
+                      </th>
+                      {["PARTICIPANT", "COLLEGE / UNIVERSITY", "CONTACT EMAIL", "TICKET ID", "QR STATUS", "ACTIONS"].map((h, i) => (
+                        <th key={i} style={{ padding: "12px 16px", textAlign: i === 5 ? "right" : "left", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: T.textTer, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1078,7 +1192,12 @@ export default function AdminPage() {
                     {participants.map((p, idx) => (
                       <tr key={idx} style={{ borderBottom: idx < participants.length - 1 ? `1px solid ${T.borderSoft}` : "none" }}>
                         <td style={{ padding: "14px 16px", width: 40 }}>
-                          <input type="checkbox" style={{ cursor: "pointer" }} />
+                          <input
+                            type="checkbox"
+                            checked={selectedParticipants.has(p.id)}
+                            onChange={() => toggleParticipantSelected(p.id)}
+                            style={{ cursor: "pointer" }}
+                          />
                         </td>
                         <td style={{ padding: "14px 16px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1103,19 +1222,25 @@ export default function AdminPage() {
                           <StatusPill status={p.ticket_status} />
                         </td>
                         <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                          {p.ticket_id ? (
-                            <div style={{ display: "inline-flex", gap: 6 }}>
-                              <ActionIconButton title="Show QR" onClick={() => handleShowQr(p)} icon={<Icon.Qr style={{ width: 15, height: 15 }} />} />
-                              {p.ticket_status !== "checked_in" && p.ticket_status !== "revoked" && (
-                                <>
-                                  <ActionIconButton title="Revoke" tone="red" onClick={() => { setActionTicketId(p.ticket_id); setActionType("revoke"); }} icon={<Icon.X style={{ width: 14, height: 14 }} />} />
-                                  <ActionIconButton title="Reissue" tone="blue" onClick={() => { setActionTicketId(p.ticket_id); setActionType("reissue"); }} icon={<Icon.Sync style={{ width: 14, height: 14 }} />} />
-                                </>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: 12, color: T.textTer }}>—</span>
-                          )}
+                          <div style={{ display: "inline-flex", gap: 6 }}>
+                            {p.ticket_id && (
+                              <>
+                                <ActionIconButton title="Show QR" onClick={() => handleShowQr(p)} icon={<Icon.Qr style={{ width: 15, height: 15 }} />} />
+                                {p.ticket_status !== "checked_in" && p.ticket_status !== "revoked" && (
+                                  <>
+                                    <ActionIconButton title="Revoke" tone="red" onClick={() => { setActionTicketId(p.ticket_id); setActionType("revoke"); }} icon={<Icon.X style={{ width: 14, height: 14 }} />} />
+                                    <ActionIconButton title="Reissue" tone="blue" onClick={() => { setActionTicketId(p.ticket_id); setActionType("reissue"); }} icon={<Icon.Sync style={{ width: 14, height: 14 }} />} />
+                                  </>
+                                )}
+                              </>
+                            )}
+                            <ActionIconButton
+                              title="Delete participant"
+                              tone="red"
+                              onClick={() => setDeletingParticipant(p)}
+                              icon={<Icon.Trash />}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1477,6 +1602,69 @@ export default function AdminPage() {
               {staffActionBusy ? "Deleting…" : "Yes, Delete"}
             </button>
             <button onClick={() => setDeletingStaff(null)} style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {deletingParticipant && (
+        <Modal onClose={() => setDeletingParticipant(null)} width={440}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", backgroundColor: T.redBg, color: T.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }}>
+            <Icon.Alert />
+          </div>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+            Delete {deletingParticipant.name}?
+          </h3>
+          <p style={{ fontSize: 13, color: T.textSec, marginBottom: 20, lineHeight: 1.5 }}>
+            This removes the participant <strong>{deletingParticipant.email}</strong> and
+            all their tickets from the database. Their QR pass will stop working.
+            Scan log entries are kept but detached.
+          </p>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={handleDeleteParticipant}
+              disabled={deleteBusy}
+              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: deleteBusy ? 0.6 : 1 }}
+            >
+              {deleteBusy ? "Deleting…" : "Yes, Delete"}
+            </button>
+            <button
+              onClick={() => setDeletingParticipant(null)}
+              style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {bulkDeleteOpen && (
+        <Modal onClose={() => setBulkDeleteOpen(false)} width={440}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", backgroundColor: T.redBg, color: T.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }}>
+            <Icon.Alert />
+          </div>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+            Delete {selectedParticipants.size} participant{selectedParticipants.size === 1 ? "" : "s"}?
+          </h3>
+          <p style={{ fontSize: 13, color: T.textSec, marginBottom: 20, lineHeight: 1.5 }}>
+            This removes all selected participants and their tickets from the
+            database. This action cannot be undone.
+          </p>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleteBusy}
+              style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", backgroundColor: T.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT, opacity: deleteBusy ? 0.6 : 1 }}
+            >
+              {deleteBusy ? "Deleting…" : `Delete ${selectedParticipants.size}`}
+            </button>
+            <button
+              onClick={() => setBulkDeleteOpen(false)}
+              style={{ padding: "14px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, color: T.text }}
+            >
               Cancel
             </button>
           </div>
