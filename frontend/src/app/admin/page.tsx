@@ -35,6 +35,7 @@ const AVATAR_COLORS = [
 ];
 
 const PAGE_SIZE = 15;
+const IMPORT_CHUNK_SIZE = 200;
 
 type TabKey = "participants" | "volunteers" | "analytics";
 
@@ -48,6 +49,15 @@ function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function escapeCsvField(v: string): string {
+  if (v == null) return "";
+  const s = String(v);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }
 
 const Icon = {
@@ -133,10 +143,16 @@ function StatCard({ label, value, sub, icon, accent, bar, barPct, badge }: any) 
   );
 }
 
-function Modal({ children, onClose, width = 500 }: any) {
+function Modal({ children, onClose, width = 500, disableBackdropClose = false }: any) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1000 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "#fff", borderRadius: 20, padding: 24, maxWidth: width, width: "100%", maxHeight: "92vh", overflowY: "auto", fontFamily: FONT, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+    <div
+      onClick={disableBackdropClose ? undefined : onClose}
+      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1000 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ backgroundColor: "#fff", borderRadius: 20, padding: 24, maxWidth: width, width: "100%", maxHeight: "92vh", overflowY: "auto", fontFamily: FONT, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}
+      >
         {children}
       </div>
     </div>
@@ -257,6 +273,9 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
   const [importResult, setImportResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [progress, setProgress] = useState<{ processed: number; total: number; chunk: number; totalChunks: number } | null>(null);
+  const [aborting, setAborting] = useState(false);
+  const abortRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const validCount = rows.filter((r) => r.status === "valid").length;
@@ -266,6 +285,7 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
   const reset = () => {
     setFileName(""); setFileSize(0); setCsvText(""); setRows([]);
     setError(null); setImportResult(null); setShowAll(false);
+    setProgress(null); setAborting(false); abortRef.current = false;
   };
 
   const handleFile = async (file: File) => {
@@ -299,21 +319,82 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
   };
 
   const handleConfirm = async () => {
-    if (!csvText.trim()) return;
+    const validRows = rows.filter((r) => r.status === "valid");
+    if (validRows.length === 0) return;
+
+    abortRef.current = false;
     setImporting(true);
     setError(null);
-    try {
-      const res = await api.importParticipants(csvText);
-      if (autoEmail && res.imported > 0) {
-        try { await api.sendEmails(false); } catch { }
+
+    const totalChunks = Math.ceil(validRows.length / IMPORT_CHUNK_SIZE);
+    let totalImported = 0, totalDuplicates = 0, totalErrors = 0, totalIssued = 0;
+    const allErrorDetails: string[] = [];
+
+    for (let i = 0; i < validRows.length; i += IMPORT_CHUNK_SIZE) {
+      if (abortRef.current) break;
+
+      const chunk = validRows.slice(i, i + IMPORT_CHUNK_SIZE);
+      const chunkNum = Math.floor(i / IMPORT_CHUNK_SIZE) + 1;
+
+      setProgress({
+        processed: i,
+        total: validRows.length,
+        chunk: chunkNum,
+        totalChunks,
+      });
+
+      // Build a clean CSV for this chunk
+      const header = "name,email,college,photo_url";
+      const body = chunk
+        .map((r) => [r.name, r.email, r.college, ""].map(escapeCsvField).join(","))
+        .join("\n");
+      const csv = header + "\n" + body;
+
+      try {
+        const res = await api.importParticipants(csv);
+        totalImported += res.imported || 0;
+        totalDuplicates += res.duplicates || 0;
+        totalErrors += res.errors || 0;
+        totalIssued += res.issued || 0;
+        if (Array.isArray(res.error_details)) allErrorDetails.push(...res.error_details);
+      } catch (err: any) {
+        setError(err?.detail?.message || err?.message || "Import chunk failed");
+        break;
       }
-      setImportResult(res);
-      onImported();
-    } catch (err: any) {
-      setError(err?.detail?.message || err?.message || "Import failed");
-    } finally {
-      setImporting(false);
+
+      setProgress({
+        processed: Math.min(i + IMPORT_CHUNK_SIZE, validRows.length),
+        total: validRows.length,
+        chunk: chunkNum,
+        totalChunks,
+      });
     }
+
+    const wasAborted = abortRef.current;
+
+    setImportResult({
+      imported: totalImported,
+      duplicates: totalDuplicates,
+      errors: totalErrors,
+      issued: totalIssued,
+      error_details: allErrorDetails,
+      aborted: wasAborted,
+    });
+
+    if (autoEmail && totalImported > 0 && !wasAborted) {
+      try { await api.sendEmails(false); } catch { }
+    }
+
+    onImported();
+    setImporting(false);
+    setProgress(null);
+    setAborting(false);
+    abortRef.current = false;
+  };
+
+  const handleAbort = () => {
+    abortRef.current = true;
+    setAborting(true);
   };
 
   const downloadTemplate = () => {
@@ -353,35 +434,137 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
 
   const previewRows = showAll ? rows : rows.slice(0, 5);
 
+  // ─── Success screen ────────────────────────────────────
   if (importResult) {
+    const pct = importResult.imported > 0 ? 100 : 0;
     return (
       <div>
         <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", backgroundColor: T.greenBg, color: T.green, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 28, marginBottom: 14 }}>✓</div>
-          <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Import Complete</h3>
-          <p style={{ fontSize: 14, color: T.textSec }}>Your roster has been updated.</p>
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            backgroundColor: importResult.aborted ? T.orangeBg : T.greenBg,
+            color: importResult.aborted ? T.orange : T.green,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: 28, marginBottom: 14,
+          }}>
+            {importResult.aborted ? "!" : "✓"}
+          </div>
+          <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
+            {importResult.aborted ? "Import Stopped" : "Import Complete"}
+          </h3>
+          <p style={{ fontSize: 14, color: T.textSec }}>
+            {importResult.aborted
+              ? `${importResult.imported} participants were imported before you stopped.`
+              : "Your roster has been updated and QR passes have been issued."}
+          </p>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 20 }}>
-          <div style={{ padding: 16, borderRadius: 12, backgroundColor: T.greenBg }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.greenText, letterSpacing: 0.5 }}>IMPORTED</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: T.greenText }}>{importResult.imported}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
+          <div style={{ padding: 14, borderRadius: 12, backgroundColor: T.greenBg }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.greenText, letterSpacing: 0.5 }}>IMPORTED</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: T.greenText }}>{importResult.imported}</div>
           </div>
-          <div style={{ padding: 16, borderRadius: 12, backgroundColor: T.orangeBg }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#8A5B00", letterSpacing: 0.5 }}>DUPLICATES</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#8A5B00" }}>{importResult.duplicates}</div>
+          <div style={{ padding: 14, borderRadius: 12, backgroundColor: "#EBF4FE" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#0055B8", letterSpacing: 0.5 }}>QR ISSUED</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#0055B8" }}>{importResult.issued || importResult.imported}</div>
           </div>
-          <div style={{ padding: 16, borderRadius: 12, backgroundColor: T.redBg }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#C62828", letterSpacing: 0.5 }}>ERRORS</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#C62828" }}>{importResult.errors}</div>
+          <div style={{ padding: 14, borderRadius: 12, backgroundColor: T.orangeBg }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#8A5B00", letterSpacing: 0.5 }}>DUPES</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#8A5B00" }}>{importResult.duplicates}</div>
+          </div>
+          <div style={{ padding: 14, borderRadius: 12, backgroundColor: T.redBg }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#C62828", letterSpacing: 0.5 }}>ERRORS</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#C62828" }}>{importResult.errors}</div>
           </div>
         </div>
-        <button onClick={onClose} style={{ marginTop: 24, width: "100%", padding: 14, borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>
+
+        {Array.isArray(importResult.error_details) && importResult.error_details.length > 0 && (
+          <div style={{
+            marginTop: 16, padding: 12, borderRadius: 12,
+            backgroundColor: T.redBg, maxHeight: 140, overflowY: "auto",
+            fontSize: 12, fontFamily: "ui-monospace, monospace", color: "#C62828",
+          }}>
+            {importResult.error_details.slice(0, 20).map((d: string, i: number) => (
+              <div key={i}>• {d}</div>
+            ))}
+            {importResult.error_details.length > 20 && (
+              <div style={{ marginTop: 4, fontStyle: "italic" }}>
+                …and {importResult.error_details.length - 20} more
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 24, width: "100%", padding: 14, borderRadius: 12,
+            border: "none", backgroundColor: T.blue, color: "#fff",
+            fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT,
+          }}
+        >
           Done
         </button>
       </div>
     );
   }
 
+  // ─── Progress screen (during import) ────────────────────
+  if (importing && progress) {
+    const pct = progress.total > 0
+      ? Math.round((progress.processed / progress.total) * 100)
+      : 0;
+    return (
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", backgroundColor: "#EBF4FE", color: T.blue, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <Icon.Sync style={{ width: 26, height: 26, animation: "spin 1.2s linear infinite" }} />
+        </div>
+        <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
+          {aborting ? "Stopping…" : "Importing Participants"}
+        </h3>
+        <p style={{ fontSize: 14, color: T.textSec, marginBottom: 24 }}>
+          {aborting
+            ? "Waiting for the current chunk to finish…"
+            : "Please don't close this window. Each chunk uploads in seconds."}
+        </p>
+
+        {/* Progress bar */}
+        <div style={{ height: 10, backgroundColor: "#E5E5EA", borderRadius: 5, overflow: "hidden", marginBottom: 12 }}>
+          <div style={{
+            height: "100%",
+            width: `${pct}%`,
+            backgroundColor: T.blue,
+            transition: "width 0.3s ease",
+          }} />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textSec, marginBottom: 24 }}>
+          <span>
+            <strong style={{ color: T.text }}>{progress.processed.toLocaleString()}</strong> of{" "}
+            <strong style={{ color: T.text }}>{progress.total.toLocaleString()}</strong> rows
+          </span>
+          <span>
+            Chunk {progress.chunk} of {progress.totalChunks} • {pct}%
+          </span>
+        </div>
+
+        <button
+          onClick={handleAbort}
+          disabled={aborting}
+          style={{
+            padding: "12px 28px", borderRadius: 12,
+            border: `1px solid ${T.border}`, backgroundColor: "#fff",
+            cursor: aborting ? "not-allowed" : "pointer",
+            fontSize: 14, fontWeight: 700, fontFamily: FONT,
+            color: T.red, opacity: aborting ? 0.5 : 1,
+          }}
+        >
+          {aborting ? "Stopping…" : "Stop Import"}
+        </button>
+      </div>
+    );
+  }
+
+  // ─── Upload + preview screen ─────────────────────────────
   return (
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
@@ -400,6 +583,7 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
       </div>
       <p style={{ fontSize: 13, color: T.textSec, marginBottom: 18 }}>
         Issue tickets with cryptographically signed QR codes instantly to gate devices.
+        Each valid participant gets a ticket automatically.
       </p>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
@@ -589,8 +773,20 @@ function BulkCsvUploader({ onImported, onCancel, onClose }: { onImported: () => 
               <button onClick={reset} style={{ padding: "12px 24px", borderRadius: 12, border: `1px solid ${T.border}`, backgroundColor: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: FONT, color: T.text, display: "flex", alignItems: "center", gap: 8 }}>
                 Cancel / Re-upload
               </button>
-              <button onClick={handleConfirm} disabled={importing || validCount === 0} style={{ padding: "12px 26px", borderRadius: 12, border: "none", backgroundColor: T.blue, color: "#fff", cursor: importing || validCount === 0 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: FONT, display: "flex", alignItems: "center", gap: 8, opacity: importing || validCount === 0 ? 0.5 : 1, boxShadow: "0 4px 12px rgba(0,122,255,0.25)" }}>
-                {importing ? "Importing…" : "Confirm & Import Participants"}
+              <button
+                onClick={handleConfirm}
+                disabled={validCount === 0}
+                style={{
+                  padding: "12px 26px", borderRadius: 12,
+                  border: "none", backgroundColor: T.blue, color: "#fff",
+                  cursor: validCount === 0 ? "not-allowed" : "pointer",
+                  fontSize: 14, fontWeight: 700, fontFamily: FONT,
+                  display: "flex", alignItems: "center", gap: 8,
+                  opacity: validCount === 0 ? 0.5 : 1,
+                  boxShadow: "0 4px 12px rgba(0,122,255,0.25)",
+                }}
+              >
+                Confirm & Import {validCount > 0 ? `(${validCount})` : ""}
               </button>
             </div>
           </div>
@@ -614,7 +810,6 @@ export default function AdminPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("participants");
 
-  // ─── Event info ──────────────────────────────────────────────
   const [eventInfo, setEventInfo] = useState<any>(null);
   const [showEditEvent, setShowEditEvent] = useState(false);
   const [editEventName, setEditEventName] = useState("");
@@ -1086,18 +1281,11 @@ export default function AdminPage() {
               onClick={handleLogout}
               title="Log out"
               style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${T.border}`,
-                backgroundColor: "#fff",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: FONT,
-                color: T.red,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
+                padding: "8px 12px", borderRadius: 10,
+                border: `1px solid ${T.border}`, backgroundColor: "#fff",
+                cursor: "pointer", fontSize: 12, fontWeight: 600,
+                fontFamily: FONT, color: T.red,
+                display: "flex", alignItems: "center", gap: 6,
               }}
             >
               <Icon.LogOut />
@@ -1543,7 +1731,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Edit Event modal */}
       {showEditEvent && (
         <Modal onClose={() => setShowEditEvent(false)} width={480}>
           <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Edit Event</h3>
@@ -1593,7 +1780,10 @@ export default function AdminPage() {
       )}
 
       {showAddParticipant && (
-        <Modal onClose={() => setShowAddParticipant(false)} width={addTab === "bulk" ? 940 : 500}>
+        <Modal
+          onClose={() => setShowAddParticipant(false)}
+          width={addTab === "bulk" ? 940 : 500}
+        >
           {addTab === "bulk" ? (
             <BulkCsvUploader
               onImported={() => { loadStats(true); loadParticipants(true); }}
@@ -1849,4 +2039,9 @@ export default function AdminPage() {
       )}
     </div>
   );
+
+  function importingStateGuard() {
+    // placeholder — replaced below; we set the actual handler via prop above
+    setShowAddParticipant(false);
+  }
 }

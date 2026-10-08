@@ -211,17 +211,35 @@ def import_participants_csv(
 ):
     """
     Import participants from CSV content.
+    Auto-issues a ticket for every newly inserted participant so the
+    QR system works immediately after upload.
+    Idempotent for duplicates (existing email/event pairs are skipped).
     Expected headers: name, email, college, photo_url
-    Gracefully skips invalid rows and duplicates.
     """
     pool = get_pool()
     with pool.connection() as conn:
         target_event_id = req.event_id or _get_or_create_default_event(conn)
 
+        # Ensure the signing key exists before we start inserting tickets.
+        key_row = conn.execute(
+            "SELECT key_id FROM signing_keys WHERE key_id = %s AND active = true;",
+            (config.SIGNING_KEY_ID,),
+        ).fetchone()
+        if not key_row:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "reason": "missing_signing_key",
+                    "message": f"Signing key {config.SIGNING_KEY_ID} is not registered. "
+                               "Wait for a cold start or register the key, then retry.",
+                },
+            )
+
         reader = csv.DictReader(io.StringIO(req.csv_content.strip()))
         valid_rows = 0
         duplicates = 0
         errors = 0
+        issued_count = 0
         error_details = []
 
         for idx, row in enumerate(reader, start=1):
@@ -237,18 +255,35 @@ def import_participants_csv(
 
             pid = str(uuid.uuid4())
             try:
-                conn.execute(
+                cur = conn.execute(
                     """
                     INSERT INTO participants (id, event_id, name, email, college, photo_url)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (event_id, email) DO NOTHING;
+                    ON CONFLICT (event_id, email) DO NOTHING
+                    RETURNING id;
                     """,
                     (pid, target_event_id, name, email, college or None, photo_url or None),
                 )
-                if conn.execute("SELECT 1 FROM participants WHERE id = %s", (pid,)).fetchone():
-                    valid_rows += 1
-                else:
+                inserted = cur.fetchone()
+
+                if inserted is None:
+                    # Email already exists for this event → skip
                     duplicates += 1
+                    continue
+
+                actual_pid = str(inserted["id"])
+
+                # Auto-issue a ticket so the QR system works right away
+                tid = str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT INTO tickets (id, event_id, participant_id, status, key_id)
+                    VALUES (%s, %s, %s, 'issued', %s);
+                    """,
+                    (tid, target_event_id, actual_pid, config.SIGNING_KEY_ID),
+                )
+                issued_count += 1
+                valid_rows += 1
             except Exception as e:
                 errors += 1
                 error_details.append(f"Row {idx}: {str(e)}")
@@ -260,9 +295,9 @@ def import_participants_csv(
         "imported": valid_rows,
         "duplicates": duplicates,
         "errors": errors,
+        "issued": issued_count,
         "error_details": error_details,
     }
-
 
 @router.post("/api/tickets/issue")
 def issue_tickets(
